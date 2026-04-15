@@ -18,13 +18,13 @@
 GitHub에서 바로 설치:
 
 ```bash
-uv tool install git+https://github.com/3ae3ae/lecture_notes.git
+uv tool install git+https://github.com/3ae3ae/lecture-notes.git
 ```
 
 기존 설치 갱신:
 
 ```bash
-uv tool install --refresh git+https://github.com/3ae3ae/lecture_notes.git
+uv tool install --refresh git+https://github.com/3ae3ae/lecture-notes.git
 ```
 
 로컬 개발 환경에서 설치:

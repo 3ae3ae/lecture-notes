@@ -18,13 +18,13 @@ The CLI uses OpenAI's Python SDK and works with both OpenAI and OpenAI-compatibl
 Install directly from GitHub with `uv tool`:
 
 ```bash
-uv tool install git+https://github.com/3ae3ae/lecture_notes.git
+uv tool install git+https://github.com/3ae3ae/lecture-notes.git
 ```
 
 Update an existing install:
 
 ```bash
-uv tool install --refresh git+https://github.com/3ae3ae/lecture_notes.git
+uv tool install --refresh git+https://github.com/3ae3ae/lecture-notes.git
 ```
 
 Local development install:
