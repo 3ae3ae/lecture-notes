@@ -53,12 +53,20 @@ class ReadWriteTests(unittest.TestCase):
     def test_write_markdown_uses_expected_layout(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir, "lecture.md")
-            cli.write_markdown(output_path, "요약", "전사문")
+            cli.write_markdown(output_path, "### 핵심 요약\n- 요약", "전사문")
 
             self.assertEqual(
                 output_path.read_text(encoding="utf-8"),
-                "[핵심 요약]\n요약\n\n[전체 전사문]\n전사문\n",
+                "## 요약\n\n### 핵심 요약\n- 요약\n\n## 전체 전사문\n\n전사문\n",
             )
+
+    def test_normalize_summary_text_converts_bracket_sections(self) -> None:
+        summary_text = "[핵심 요약]\n- A\n\n[교수님 강조 포인트]\n- B"
+
+        self.assertEqual(
+            cli.normalize_summary_text(summary_text),
+            "### 핵심 요약\n- A\n\n### 교수님 강조 포인트\n- B",
+        )
 
 
 class MainTests(unittest.TestCase):

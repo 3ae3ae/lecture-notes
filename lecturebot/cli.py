@@ -111,8 +111,33 @@ def read_text_file(path: Path) -> str:
     raise RuntimeError(f"Failed to read {path}")
 
 
+def normalize_summary_text(summary_text: str) -> str:
+    normalized_lines: list[str] = []
+    replacements = {
+        "[핵심 요약]": "### 핵심 요약",
+        "[교수님 강조 포인트]": "### 교수님 강조 포인트",
+        "## 핵심 요약": "### 핵심 요약",
+        "## 교수님 강조 포인트": "### 교수님 강조 포인트",
+    }
+
+    for line in summary_text.strip().splitlines():
+        stripped = line.strip()
+        normalized_lines.append(replacements.get(stripped, line))
+
+    normalized = "\n".join(normalized_lines).strip()
+    if not normalized:
+        return "### 핵심 요약"
+    if "### 핵심 요약" not in normalized:
+        normalized = f"### 핵심 요약\n{normalized}"
+    return normalized
+
+
 def write_markdown(output_path: Path, summary_text: str, transcript_text: str) -> None:
-    content = f"[핵심 요약]\n{summary_text.strip()}\n\n[전체 전사문]\n{transcript_text.strip()}\n"
+    normalized_summary = normalize_summary_text(summary_text)
+    content = (
+        f"## 요약\n\n{normalized_summary}\n\n"
+        f"## 전체 전사문\n\n{transcript_text.strip()}\n"
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.NamedTemporaryFile(

@@ -80,10 +80,15 @@ lecturebot ./lectures --model your-model-name
 최종 Markdown 형식:
 
 ```md
-[핵심 요약]
-{summary}
+## 요약
 
-[전체 전사문]
+### 핵심 요약
+...
+
+### 교수님 강조 포인트
+...
+
+## 전체 전사문
 {formatted_transcript}
 ```
 
