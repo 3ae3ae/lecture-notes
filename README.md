@@ -39,6 +39,12 @@ lecturebot ./lectures --model gpt-4o-mini
 lecturebot ./lectures --dry-run
 ```
 
+상세 단계 로그까지 보기:
+
+```bash
+lecturebot ./lectures --model gpt-4o-mini --verbose
+```
+
 추가 옵션:
 
 - `--api-key <key>`
@@ -56,6 +62,9 @@ lecturebot ./lectures --dry-run
 - `foo.txt` 옆에 `foo.md`가 이미 있으면 해당 파일은 건너뜁니다.
 - 텍스트는 `utf-8`, `utf-8-sig`, `cp949` 순으로 읽기를 시도합니다.
 - 출력 파일은 항상 원본과 같은 폴더의 같은 이름 `md`로 저장됩니다.
+- 기본 실행만으로도 파일별 진행 상황이 `[현재/전체]` 형식으로 출력됩니다.
+- `--verbose`를 주면 단계별 진행 로그를 추가로 출력합니다.
+- 한글 파일명과 공백이 포함된 파일명도 `pathlib` 기반으로 그대로 처리합니다.
 
 최종 Markdown 형식:
 

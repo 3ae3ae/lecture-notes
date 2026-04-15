@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from lecturebot.pipeline import ProcessedDocument, run_pipeline
+from lecturebot.pipeline import ProcessedDocument, run_pipeline, run_pipeline_with_progress
 
 
 class _FakeMessage:
@@ -55,3 +55,25 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(calls[0]["messages"][1]["content"], "raw text")
         self.assertEqual(calls[1]["messages"][1]["content"], "stage-1")
         self.assertEqual(calls[2]["messages"][1]["content"], "stage-2")
+
+    def test_run_pipeline_with_progress_reports_all_stages(self) -> None:
+        client = _FakeClient()
+        stages: list[tuple[int, str]] = []
+
+        run_pipeline_with_progress(
+            "raw text",
+            client=client,
+            model="gpt-test",
+            on_stage=lambda stage_number, stage_name: stages.append(
+                (stage_number, stage_name)
+            ),
+        )
+
+        self.assertEqual(
+            stages,
+            [
+                (1, "correcting transcript"),
+                (2, "formatting transcript"),
+                (3, "summarizing transcript"),
+            ],
+        )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from lecturebot.prompts import (
     CORRECTION_SYSTEM_PROMPT,
@@ -43,18 +43,33 @@ def _call_chat_completion(
 
 
 def run_pipeline(raw_text: str, client: "OpenAI", model: str) -> ProcessedDocument:
+    return run_pipeline_with_progress(raw_text, client=client, model=model)
+
+
+def run_pipeline_with_progress(
+    raw_text: str,
+    client: "OpenAI",
+    model: str,
+    on_stage: Callable[[int, str], None] | None = None,
+) -> ProcessedDocument:
+    if on_stage is not None:
+        on_stage(1, "correcting transcript")
     corrected_text = _call_chat_completion(
         client=client,
         model=model,
         system_prompt=CORRECTION_SYSTEM_PROMPT,
         user_text=raw_text,
     )
+    if on_stage is not None:
+        on_stage(2, "formatting transcript")
     formatted_transcript = _call_chat_completion(
         client=client,
         model=model,
         system_prompt=FORMATTING_SYSTEM_PROMPT,
         user_text=corrected_text,
     )
+    if on_stage is not None:
+        on_stage(3, "summarizing transcript")
     summary_text = _call_chat_completion(
         client=client,
         model=model,

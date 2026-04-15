@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
-from lecturebot.pipeline import run_pipeline
+from lecturebot.pipeline import run_pipeline_with_progress
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -144,6 +144,10 @@ def _build_client(args: argparse.Namespace) -> "OpenAI":
     return OpenAI(**client_kwargs)
 
 
+def _format_progress(index: int, total: int, txt_path: Path) -> str:
+    return f"[{index}/{total}] {txt_path}"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     root = Path(args.path).resolve()
@@ -180,42 +184,54 @@ def main(argv: Sequence[str] | None = None) -> int:
     skipped_count = 0
     error_count = 0
 
-    if args.verbose:
-        _log(f"Searching under {root}", verbose=True)
-        _log(f"Found {len(txt_files)} matching txt file(s)", verbose=True)
+    print(f"searching {root}")
+    print(f"found {len(txt_files)} matching txt file(s)")
 
-    for txt_path in txt_files:
+    total_files = len(txt_files)
+    for index, txt_path in enumerate(txt_files, start=1):
         output_path = txt_path.with_suffix(".md")
+        progress_prefix = _format_progress(index, total_files, txt_path)
 
         if should_skip(txt_path):
             skipped_count += 1
-            print(f"skip {txt_path} -> {output_path}")
+            print(f"{progress_prefix} skip existing -> {output_path}")
             continue
 
         try:
+            print(f"{progress_prefix} reading")
             raw_text = read_text_file(txt_path)
             if not raw_text.strip():
                 skipped_count += 1
-                print(f"skip empty {txt_path}")
+                print(f"{progress_prefix} skip empty")
                 continue
 
             if args.dry_run:
                 processed_count += 1
-                print(f"would-process {txt_path} -> {output_path}")
+                print(f"{progress_prefix} would-process -> {output_path}")
                 continue
 
-            _log(f"processing {txt_path}", verbose=args.verbose)
-            result = run_pipeline(raw_text, client=client, model=model)
+            result = run_pipeline_with_progress(
+                raw_text,
+                client=client,
+                model=model,
+                on_stage=(
+                    lambda stage_number, stage_name: _log(
+                        f"{progress_prefix} stage {stage_number}/3 {stage_name}",
+                        verbose=args.verbose,
+                    )
+                ),
+            )
+            _log(f"{progress_prefix} writing markdown", verbose=args.verbose)
             write_markdown(
                 output_path,
                 summary_text=result.summary_text,
                 transcript_text=result.formatted_transcript,
             )
             processed_count += 1
-            print(f"processed {txt_path} -> {output_path}")
+            print(f"{progress_prefix} processed -> {output_path}")
         except Exception as exc:  # pragma: no cover - exercised by CLI tests
             error_count += 1
-            print(f"error {txt_path}: {exc}", file=sys.stderr)
+            print(f"{progress_prefix} error: {exc}", file=sys.stderr)
             if args.fail_fast:
                 return 1
 

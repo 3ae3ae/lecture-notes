@@ -86,6 +86,9 @@ class MainTests(unittest.TestCase):
 
             output = stdout.getvalue()
             self.assertEqual(exit_code, 0)
+            self.assertIn("searching", output)
+            self.assertIn("found 2 matching txt file(s)", output)
+            self.assertIn("[1/2]", output)
             self.assertIn("would-process", output)
             self.assertIn("skip", output)
             self.assertIn("processed=1 skipped=1 errors=0", output)
@@ -103,7 +106,12 @@ class MainTests(unittest.TestCase):
             good.write_text("good", encoding="utf-8")
             bad.write_text("bad", encoding="utf-8")
 
-            def fake_pipeline(raw_text: str, client: object, model: str):
+            def fake_pipeline(
+                raw_text: str,
+                client: object,
+                model: str,
+                on_stage: object | None = None,
+            ):
                 if raw_text == "bad":
                     raise RuntimeError("boom")
 
@@ -117,7 +125,7 @@ class MainTests(unittest.TestCase):
             stderr = io.StringIO()
             with (
                 mock.patch("lecturebot.cli._build_client", return_value=object()),
-                mock.patch("lecturebot.cli.run_pipeline", side_effect=fake_pipeline),
+                mock.patch("lecturebot.cli.run_pipeline_with_progress", side_effect=fake_pipeline),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -128,3 +136,33 @@ class MainTests(unittest.TestCase):
             self.assertFalse((root / "bad.md").exists())
             self.assertIn("errors=1", stdout.getvalue())
             self.assertIn("boom", stderr.getvalue())
+
+    def test_main_handles_korean_and_space_filenames(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"LECTUREBOT_MODEL": "gpt-test", "OPENAI_API_KEY": "test-key"},
+            clear=True,
+        ):
+            root = Path(tmpdir)
+            txt_path = root / "강의 노트 1.txt"
+            txt_path.write_text("원본 전사", encoding="utf-8")
+
+            class Result:
+                formatted_transcript = "정리된 전사문"
+                summary_text = "핵심 요약"
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch("lecturebot.cli._build_client", return_value=object()),
+                mock.patch("lecturebot.cli.run_pipeline_with_progress", return_value=Result()),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                exit_code = cli.main([tmpdir])
+
+            output_path = root / "강의 노트 1.md"
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(output_path.exists())
+            self.assertIn("강의 노트 1.txt", stdout.getvalue())
+            self.assertEqual("", stderr.getvalue())
