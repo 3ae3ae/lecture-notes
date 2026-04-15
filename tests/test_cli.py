@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import os
+import sys
 import tempfile
+import types
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -69,6 +71,20 @@ class MainTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 2)
             self.assertIn("model is required", stderr.getvalue())
+
+    def test_main_requires_api_key_with_updated_env_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"LECTUREBOT_MODEL": "gpt-test"},
+            clear=True,
+        ):
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = cli.main([tmpdir])
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("LECTUREBOT_API_KEY", stderr.getvalue())
 
     def test_main_dry_run_lists_process_and_skip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -166,3 +182,24 @@ class MainTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertIn("강의 노트 1.txt", stdout.getvalue())
             self.assertEqual("", stderr.getvalue())
+
+    def test_build_client_uses_openai_compatible_env_fallbacks(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "LECTUREBOT_API_KEY": "compat-key",
+                "LECTUREBOT_BASE_URL": "https://compat.example/v1",
+            },
+            clear=True,
+        ):
+            args = cli.parse_args([])
+            mock_openai = mock.Mock()
+            fake_module = types.SimpleNamespace(OpenAI=mock_openai)
+
+            with mock.patch.dict(sys.modules, {"openai": fake_module}):
+                cli._build_client(args)
+
+            mock_openai.assert_called_once_with(
+                api_key="compat-key",
+                base_url="https://compat.example/v1",
+            )

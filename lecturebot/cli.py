@@ -36,11 +36,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--api-key",
-        help="OpenAI API key. Falls back to OPENAI_API_KEY.",
+        help=(
+            "API key for OpenAI or an OpenAI-compatible server. "
+            "Falls back to LECTUREBOT_API_KEY or OPENAI_API_KEY."
+        ),
     )
     parser.add_argument(
         "--base-url",
-        help="Optional OpenAI-compatible base URL.",
+        help=(
+            "Optional OpenAI-compatible base URL. "
+            "Falls back to LECTUREBOT_BASE_URL."
+        ),
     )
     parser.add_argument(
         "--include-glob",
@@ -136,11 +142,16 @@ def _build_client(args: argparse.Namespace) -> "OpenAI":
     from openai import OpenAI
 
     client_kwargs: dict[str, str] = {}
-    api_key = args.api_key or os.environ.get("OPENAI_API_KEY")
+    api_key = (
+        args.api_key
+        or os.environ.get("LECTUREBOT_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+    )
     if api_key:
         client_kwargs["api_key"] = api_key
-    if args.base_url:
-        client_kwargs["base_url"] = args.base_url
+    base_url = args.base_url or os.environ.get("LECTUREBOT_BASE_URL")
+    if base_url:
+        client_kwargs["base_url"] = base_url
     return OpenAI(**client_kwargs)
 
 
@@ -169,10 +180,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
 
-    api_key = args.api_key or os.environ.get("OPENAI_API_KEY")
+    api_key = (
+        args.api_key
+        or os.environ.get("LECTUREBOT_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+    )
     if not args.dry_run and not api_key:
         print(
-            "error: API key is required. Pass --api-key or set OPENAI_API_KEY.",
+            "error: API key is required. Pass --api-key or set LECTUREBOT_API_KEY or OPENAI_API_KEY.",
             file=sys.stderr,
         )
         return 2
