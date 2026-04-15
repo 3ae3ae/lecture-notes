@@ -32,24 +32,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        help=(
-            "Model name. Falls back to LECTURE_NOTES_MODEL "
-            "or legacy LECTUREBOT_MODEL."
-        ),
+        help="Model name. Falls back to LECTURE_NOTES_MODEL.",
     )
     parser.add_argument(
         "--api-key",
         help=(
             "API key for OpenAI or an OpenAI-compatible server. "
-            "Falls back to LECTURE_NOTES_API_KEY, "
-            "legacy LECTUREBOT_API_KEY, or OPENAI_API_KEY."
+            "Falls back to LECTURE_NOTES_API_KEY or OPENAI_API_KEY."
         ),
     )
     parser.add_argument(
         "--base-url",
         help=(
             "Optional OpenAI-compatible base URL. "
-            "Falls back to LECTURE_NOTES_BASE_URL or legacy LECTUREBOT_BASE_URL."
+            "Falls back to LECTURE_NOTES_BASE_URL."
         ),
     )
     parser.add_argument(
@@ -164,11 +160,7 @@ def _log(message: str, *, verbose: bool = True, stream: object = sys.stdout) -> 
 
 
 def _resolve_model(args: argparse.Namespace) -> str | None:
-    return (
-        args.model
-        or os.environ.get("LECTURE_NOTES_MODEL")
-        or os.environ.get("LECTUREBOT_MODEL")
-    )
+    return args.model or os.environ.get("LECTURE_NOTES_MODEL")
 
 
 def _build_client(args: argparse.Namespace) -> "OpenAI":
@@ -178,7 +170,6 @@ def _build_client(args: argparse.Namespace) -> "OpenAI":
     api_key = (
         args.api_key
         or os.environ.get("LECTURE_NOTES_API_KEY")
-        or os.environ.get("LECTUREBOT_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
     )
     if api_key:
@@ -186,7 +177,6 @@ def _build_client(args: argparse.Namespace) -> "OpenAI":
     base_url = (
         args.base_url
         or os.environ.get("LECTURE_NOTES_BASE_URL")
-        or os.environ.get("LECTUREBOT_BASE_URL")
     )
     if base_url:
         client_kwargs["base_url"] = base_url
@@ -214,7 +204,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.dry_run and not model:
         print(
             "error: model is required. Pass --model or set "
-            "LECTURE_NOTES_MODEL or legacy LECTUREBOT_MODEL.",
+            "LECTURE_NOTES_MODEL.",
             file=sys.stderr,
         )
         return 2
@@ -222,13 +212,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     api_key = (
         args.api_key
         or os.environ.get("LECTURE_NOTES_API_KEY")
-        or os.environ.get("LECTUREBOT_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
     )
     if not args.dry_run and not api_key:
         print(
             "error: API key is required. Pass --api-key or set "
-            "LECTURE_NOTES_API_KEY, legacy LECTUREBOT_API_KEY, or OPENAI_API_KEY.",
+            "LECTURE_NOTES_API_KEY or OPENAI_API_KEY.",
             file=sys.stderr,
         )
         return 2

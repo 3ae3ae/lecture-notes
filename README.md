@@ -19,8 +19,6 @@ uv tool install .
 - `LECTURE_NOTES_MODEL`: 기본 모델명
 - `LECTURE_NOTES_BASE_URL`: OpenAI 호환 서버 base URL
 
-이전 이름인 `LECTUREBOT_API_KEY`, `LECTUREBOT_MODEL`, `LECTUREBOT_BASE_URL`도 호환 fallback으로 계속 지원합니다.
-
 CLI 인자가 환경변수보다 우선합니다.
 
 ## 사용법
