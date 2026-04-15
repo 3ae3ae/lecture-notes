@@ -1,72 +1,74 @@
 # lecture-notes
 
-`lecture-notes` is a Python CLI that recursively finds lecture transcript `*.txt` files, runs them through a 3-step AI workflow, and writes polished Markdown notes next to the source files.
+[English README](README.en.md)
 
-It is designed for cases where you already have raw transcript text and want:
+`lecture-notes`는 강의 전사 `*.txt` 파일을 재귀적으로 찾아 3단계 AI 워크플로우로 처리한 뒤, 원본 파일 옆에 정리된 Markdown 노트를 생성하는 Python CLI입니다.
 
-- corrected transcript text
-- readable paragraph formatting
-- a compact summary for review
-- Obsidian-friendly Markdown output
+다음과 같은 용도에 맞춰져 있습니다.
 
-The CLI uses OpenAI's Python SDK and works with both OpenAI and OpenAI-compatible Chat Completions APIs.
+- 전사 오류 교정
+- 읽기 쉬운 문단 구조로 정리
+- 복습용 핵심 요약 생성
+- Obsidian 친화적인 Markdown 출력
 
-## Install
+내부적으로 OpenAI Python SDK를 사용하며, OpenAI와 OpenAI 호환 Chat Completions API 서버를 지원합니다.
 
-Install directly from GitHub with `uv tool`:
+## 설치
+
+GitHub에서 바로 설치:
 
 ```bash
 uv tool install git+https://github.com/3ae3ae/lecture_notes.git
 ```
 
-Update an existing install:
+기존 설치 갱신:
 
 ```bash
 uv tool install --refresh git+https://github.com/3ae3ae/lecture_notes.git
 ```
 
-Local development install:
+로컬 개발 환경에서 설치:
 
 ```bash
 uv tool install .
 ```
 
-## Quick Start
+## 빠른 시작
 
-Set your model and API key:
+모델과 API 키를 먼저 설정합니다.
 
 ```bash
 export LECTURE_NOTES_MODEL="gpt-4o-mini"
 export LECTURE_NOTES_API_KEY="your-api-key"
 ```
 
-Run in the current directory:
+현재 디렉터리 기준으로 실행:
 
 ```bash
 lecture-notes
 ```
 
-Run on a specific folder:
+특정 폴더를 지정해 실행:
 
 ```bash
 lecture-notes ./lectures
 ```
 
-Preview targets without calling the API:
+API 호출 없이 처리 대상만 확인:
 
 ```bash
 lecture-notes ./lectures --dry-run
 ```
 
-Show step-by-step progress:
+단계별 진행 로그까지 보기:
 
 ```bash
 lecture-notes ./lectures --verbose
 ```
 
-## OpenAI-Compatible Servers
+## OpenAI 호환 서버 사용
 
-You can use OpenAI-compatible providers by setting a base URL and model name:
+OpenAI 호환 제공자를 사용할 때는 base URL과 모델명을 함께 설정하면 됩니다.
 
 ```bash
 export LECTURE_NOTES_BASE_URL="https://your-openai-compatible-server/v1"
@@ -76,56 +78,56 @@ export LECTURE_NOTES_MODEL="your-model-name"
 lecture-notes ./lectures
 ```
 
-`OPENAI_API_KEY` is also accepted as a fallback for OpenAI usage.
+OpenAI를 사용할 때는 `OPENAI_API_KEY`도 fallback으로 사용할 수 있습니다.
 
-## CLI Options
+## CLI 옵션
 
 - `lecture-notes [PATH]`
 - `--model <name>`
 - `--api-key <key>`
 - `--base-url <url>`
-- `--include-glob <pattern>` repeatable
-- `--exclude-dir <name>` repeatable
+- `--include-glob <pattern>` 반복 가능
+- `--exclude-dir <name>` 반복 가능
 - `--dry-run`
 - `--verbose`
 - `--fail-fast`
 
-## How It Works
+## 동작 방식
 
-For each `*.txt` file under the target directory:
+대상 디렉터리 아래의 각 `*.txt` 파일에 대해 다음 순서로 처리합니다.
 
-1. Correct transcription mistakes while preserving meaning.
-2. Reformat the transcript into readable paragraphs.
-3. Generate a compact summary focused on review-worthy points.
+1. 전사 오류를 교정하되 의미를 최대한 보존합니다.
+2. 전사문을 읽기 쉬운 문단 구조로 재정리합니다.
+3. 복습에 유용한 핵심 요약을 생성합니다.
 
-The tool then writes a sibling Markdown file with the same basename:
+그 다음 같은 basename의 Markdown 파일을 원본 옆에 저장합니다.
 
 - `lecture.txt` -> `lecture.md`
-- if `lecture.md` already exists, that `txt` file is skipped
+- `lecture.md`가 이미 있으면 해당 `txt`는 건너뜁니다.
 
-Default excluded directories:
+기본 제외 디렉터리:
 
 - `.git`
 - `.venv`
 - `node_modules`
 - `__pycache__`
 
-Text decoding fallback order:
+텍스트 디코딩 fallback 순서:
 
 - `utf-8`
 - `utf-8-sig`
 - `cp949`
 
-Additional behavior:
+추가 동작:
 
-- Korean filenames and filenames with spaces are supported.
-- Progress is printed per file even without `--verbose`.
-- `--verbose` adds per-stage pipeline logs.
-- Output is written through a temporary file and renamed into place.
+- 한글 파일명과 공백이 포함된 파일명을 지원합니다.
+- `--verbose` 없이도 파일 단위 진행 상황을 출력합니다.
+- `--verbose`를 주면 파이프라인 단계별 로그를 추가로 출력합니다.
+- 출력 파일은 임시 파일에 먼저 쓴 뒤 원자적으로 교체합니다.
 
-## Output Format
+## 출력 형식
 
-Generated Markdown is Obsidian-friendly and uses headings instead of bracketed labels:
+생성되는 Markdown은 Obsidian에서 보기 좋도록 대괄호 라벨 대신 헤딩을 사용합니다.
 
 ```md
 ## 요약
@@ -141,23 +143,23 @@ Generated Markdown is Obsidian-friendly and uses headings instead of bracketed l
 ...
 ```
 
-## Environment Variables
+## 환경 변수
 
-- `LECTURE_NOTES_MODEL`: default model name
-- `LECTURE_NOTES_API_KEY`: API key for OpenAI or an OpenAI-compatible server
-- `LECTURE_NOTES_BASE_URL`: base URL for an OpenAI-compatible server
-- `OPENAI_API_KEY`: fallback API key for OpenAI
+- `LECTURE_NOTES_MODEL`: 기본 모델명
+- `LECTURE_NOTES_API_KEY`: OpenAI 또는 OpenAI 호환 서버용 API 키
+- `LECTURE_NOTES_BASE_URL`: OpenAI 호환 서버 base URL
+- `OPENAI_API_KEY`: OpenAI 사용 시 fallback API 키
 
-CLI arguments take precedence over environment variables.
+CLI 인자가 환경변수보다 우선합니다.
 
-## Development
+## 개발
 
-Run tests:
+테스트 실행:
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-## License
+## 라이선스
 
-MIT. See [LICENSE](LICENSE).
+MIT. 자세한 내용은 [LICENSE](LICENSE)를 참고하세요.
