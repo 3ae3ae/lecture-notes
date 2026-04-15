@@ -1,6 +1,6 @@
-# lecturebot
+# lecture-notes
 
-`lecturebot`은 강의 전사 `txt` 파일을 찾아 3단계 AI 워크플로우로 처리하고, 요약과 전사문이 함께 들어 있는 `md` 파일을 생성하는 Python CLI입니다. 기본적으로 OpenAI를 사용하지만, OpenAI 호환 Chat Completions API 서버도 공식 지원합니다.
+`lecture-notes`는 강의 전사 `txt` 파일을 찾아 3단계 AI 워크플로우로 처리하고, 요약과 전사문이 함께 들어 있는 `md` 파일을 생성하는 Python CLI입니다. 기본적으로 OpenAI를 사용하지만, OpenAI 호환 Chat Completions API 서버도 공식 지원합니다.
 
 ## 설치
 
@@ -14,10 +14,12 @@ uv tool install .
 
 ## 환경 변수
 
-- `LECTUREBOT_API_KEY`: OpenAI 또는 OpenAI 호환 서버용 API 키
+- `LECTURE_NOTES_API_KEY`: OpenAI 또는 OpenAI 호환 서버용 API 키
 - `OPENAI_API_KEY`: OpenAI 사용 시 호환 fallback
-- `LECTUREBOT_MODEL`: 기본 모델명
-- `LECTUREBOT_BASE_URL`: OpenAI 호환 서버 base URL
+- `LECTURE_NOTES_MODEL`: 기본 모델명
+- `LECTURE_NOTES_BASE_URL`: OpenAI 호환 서버 base URL
+
+이전 이름인 `LECTUREBOT_API_KEY`, `LECTUREBOT_MODEL`, `LECTUREBOT_BASE_URL`도 호환 fallback으로 계속 지원합니다.
 
 CLI 인자가 환경변수보다 우선합니다.
 
@@ -26,33 +28,33 @@ CLI 인자가 환경변수보다 우선합니다.
 현재 디렉터리 재귀 탐색:
 
 ```bash
-lecturebot --model gpt-4o-mini
+lecture-notes --model gpt-4o-mini
 ```
 
 특정 루트 디렉터리 지정:
 
 ```bash
-lecturebot ./lectures --model gpt-4o-mini
+lecture-notes ./lectures --model gpt-4o-mini
 ```
 
 실제 처리 없이 대상만 확인:
 
 ```bash
-lecturebot ./lectures --dry-run
+lecture-notes ./lectures --dry-run
 ```
 
 상세 단계 로그까지 보기:
 
 ```bash
-lecturebot ./lectures --model gpt-4o-mini --verbose
+lecture-notes ./lectures --model gpt-4o-mini --verbose
 ```
 
 OpenAI 호환 서버 사용:
 
 ```bash
-LECTUREBOT_BASE_URL="https://your-openai-compatible-server/v1" \
-LECTUREBOT_API_KEY="your-api-key" \
-lecturebot ./lectures --model your-model-name
+LECTURE_NOTES_BASE_URL="https://your-openai-compatible-server/v1" \
+LECTURE_NOTES_API_KEY="your-api-key" \
+lecture-notes ./lectures --model your-model-name
 ```
 
 추가 옵션:
@@ -66,7 +68,7 @@ lecturebot ./lectures --model your-model-name
 
 ## 동작 방식
 
-`lecturebot`은 실행 위치 또는 지정한 경로 아래에서 `*.txt`를 재귀 탐색합니다.
+`lecture-notes`는 실행 위치 또는 지정한 경로 아래에서 `*.txt`를 재귀 탐색합니다.
 
 - 기본 제외 디렉터리: `.git`, `.venv`, `node_modules`, `__pycache__`
 - `foo.txt` 옆에 `foo.md`가 이미 있으면 해당 파일은 건너뜁니다.

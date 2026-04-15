@@ -1,4 +1,4 @@
-"""Prompt templates for the lecturebot pipeline."""
+"""Prompt templates for the lecture_notes pipeline."""
 
 CORRECTION_SYSTEM_PROMPT = """당신은 강의 녹음 전사문을 교정하는 전문 편집 에이전트다.
 

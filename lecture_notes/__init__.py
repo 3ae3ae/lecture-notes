@@ -1,4 +1,4 @@
-"""lecturebot package."""
+"""lecture_notes package."""
 
 __all__ = ["__version__"]
 

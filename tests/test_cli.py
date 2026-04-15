@@ -10,7 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from lecturebot import cli
+from lecture_notes import cli
 
 
 class DiscoverTxtFilesTests(unittest.TestCase):
@@ -83,7 +83,7 @@ class MainTests(unittest.TestCase):
     def test_main_requires_api_key_with_updated_env_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
             os.environ,
-            {"LECTUREBOT_MODEL": "gpt-test"},
+            {"LECTURE_NOTES_MODEL": "gpt-test"},
             clear=True,
         ):
             stdout = io.StringIO()
@@ -92,7 +92,7 @@ class MainTests(unittest.TestCase):
                 exit_code = cli.main([tmpdir])
 
             self.assertEqual(exit_code, 2)
-            self.assertIn("LECTUREBOT_API_KEY", stderr.getvalue())
+            self.assertIn("LECTURE_NOTES_API_KEY", stderr.getvalue())
 
     def test_main_dry_run_lists_process_and_skip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -121,7 +121,7 @@ class MainTests(unittest.TestCase):
     def test_main_continues_after_processing_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
             os.environ,
-            {"LECTUREBOT_MODEL": "gpt-test", "OPENAI_API_KEY": "test-key"},
+            {"LECTURE_NOTES_MODEL": "gpt-test", "OPENAI_API_KEY": "test-key"},
             clear=True,
         ):
             root = Path(tmpdir)
@@ -148,8 +148,8 @@ class MainTests(unittest.TestCase):
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (
-                mock.patch("lecturebot.cli._build_client", return_value=object()),
-                mock.patch("lecturebot.cli.run_pipeline_with_progress", side_effect=fake_pipeline),
+                mock.patch("lecture_notes.cli._build_client", return_value=object()),
+                mock.patch("lecture_notes.cli.run_pipeline_with_progress", side_effect=fake_pipeline),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -164,7 +164,7 @@ class MainTests(unittest.TestCase):
     def test_main_handles_korean_and_space_filenames(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
             os.environ,
-            {"LECTUREBOT_MODEL": "gpt-test", "OPENAI_API_KEY": "test-key"},
+            {"LECTURE_NOTES_MODEL": "gpt-test", "OPENAI_API_KEY": "test-key"},
             clear=True,
         ):
             root = Path(tmpdir)
@@ -178,8 +178,8 @@ class MainTests(unittest.TestCase):
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (
-                mock.patch("lecturebot.cli._build_client", return_value=object()),
-                mock.patch("lecturebot.cli.run_pipeline_with_progress", return_value=Result()),
+                mock.patch("lecture_notes.cli._build_client", return_value=object()),
+                mock.patch("lecture_notes.cli.run_pipeline_with_progress", return_value=Result()),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -195,8 +195,8 @@ class MainTests(unittest.TestCase):
         with mock.patch.dict(
             os.environ,
             {
-                "LECTUREBOT_API_KEY": "compat-key",
-                "LECTUREBOT_BASE_URL": "https://compat.example/v1",
+                "LECTURE_NOTES_API_KEY": "compat-key",
+                "LECTURE_NOTES_BASE_URL": "https://compat.example/v1",
             },
             clear=True,
         ):

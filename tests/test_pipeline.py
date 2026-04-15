@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from lecturebot.pipeline import ProcessedDocument, run_pipeline, run_pipeline_with_progress
+from lecture_notes.pipeline import (
+    ProcessedDocument,
+    run_pipeline,
+    run_pipeline_with_progress,
+)
 
 
 class _FakeMessage:

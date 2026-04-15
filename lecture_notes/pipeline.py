@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
-from lecturebot.prompts import (
+from lecture_notes.prompts import (
     CORRECTION_SYSTEM_PROMPT,
     FORMATTING_SYSTEM_PROMPT,
     SUMMARY_SYSTEM_PROMPT,

@@ -1,5 +1,5 @@
 [project]
-name = "lecturebot"
+name = "lecture-notes"
 version = "0.1.0"
 description = "CLI tool to turn lecture transcript txt files into summarized markdown."
 readme = "README.md"
@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-lecturebot = "lecturebot.cli:main"
+lecture-notes = "lecture_notes.cli:main"
 
 [build-system]
 requires = ["hatchling>=1.24.0"]

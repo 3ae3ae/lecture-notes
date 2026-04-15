@@ -1,4 +1,4 @@
-from lecturebot.cli import main
+from lecture_notes.cli import main
 
 
 if __name__ == "__main__":
