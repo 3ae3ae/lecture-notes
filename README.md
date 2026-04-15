@@ -1,99 +1,163 @@
 # lecture-notes
 
-`lecture-notes`는 강의 전사 `txt` 파일을 찾아 3단계 AI 워크플로우로 처리하고, 요약과 전사문이 함께 들어 있는 `md` 파일을 생성하는 Python CLI입니다. 기본적으로 OpenAI를 사용하지만, OpenAI 호환 Chat Completions API 서버도 공식 지원합니다.
+`lecture-notes` is a Python CLI that recursively finds lecture transcript `*.txt` files, runs them through a 3-step AI workflow, and writes polished Markdown notes next to the source files.
 
-## 설치
+It is designed for cases where you already have raw transcript text and want:
 
-로컬 프로젝트에서:
+- corrected transcript text
+- readable paragraph formatting
+- a compact summary for review
+- Obsidian-friendly Markdown output
+
+The CLI uses OpenAI's Python SDK and works with both OpenAI and OpenAI-compatible Chat Completions APIs.
+
+## Install
+
+Install directly from GitHub with `uv tool`:
+
+```bash
+uv tool install git+https://github.com/3ae3ae/lecture_notes.git
+```
+
+Update an existing install:
+
+```bash
+uv tool install --refresh git+https://github.com/3ae3ae/lecture_notes.git
+```
+
+Local development install:
 
 ```bash
 uv tool install .
 ```
 
-원격 저장소를 배포한 뒤에는 일반적인 `uv tool install <repo-or-package>` 형태로 설치할 수 있습니다.
+## Quick Start
 
-## 환경 변수
-
-- `LECTURE_NOTES_API_KEY`: OpenAI 또는 OpenAI 호환 서버용 API 키
-- `OPENAI_API_KEY`: OpenAI 사용 시 호환 fallback
-- `LECTURE_NOTES_MODEL`: 기본 모델명
-- `LECTURE_NOTES_BASE_URL`: OpenAI 호환 서버 base URL
-
-CLI 인자가 환경변수보다 우선합니다.
-
-## 사용법
-
-현재 디렉터리 재귀 탐색:
+Set your model and API key:
 
 ```bash
-lecture-notes --model gpt-4o-mini
+export LECTURE_NOTES_MODEL="gpt-4o-mini"
+export LECTURE_NOTES_API_KEY="your-api-key"
 ```
 
-특정 루트 디렉터리 지정:
+Run in the current directory:
 
 ```bash
-lecture-notes ./lectures --model gpt-4o-mini
+lecture-notes
 ```
 
-실제 처리 없이 대상만 확인:
+Run on a specific folder:
+
+```bash
+lecture-notes ./lectures
+```
+
+Preview targets without calling the API:
 
 ```bash
 lecture-notes ./lectures --dry-run
 ```
 
-상세 단계 로그까지 보기:
+Show step-by-step progress:
 
 ```bash
-lecture-notes ./lectures --model gpt-4o-mini --verbose
+lecture-notes ./lectures --verbose
 ```
 
-OpenAI 호환 서버 사용:
+## OpenAI-Compatible Servers
+
+You can use OpenAI-compatible providers by setting a base URL and model name:
 
 ```bash
-LECTURE_NOTES_BASE_URL="https://your-openai-compatible-server/v1" \
-LECTURE_NOTES_API_KEY="your-api-key" \
-lecture-notes ./lectures --model your-model-name
+export LECTURE_NOTES_BASE_URL="https://your-openai-compatible-server/v1"
+export LECTURE_NOTES_API_KEY="your-api-key"
+export LECTURE_NOTES_MODEL="your-model-name"
+
+lecture-notes ./lectures
 ```
 
-추가 옵션:
+`OPENAI_API_KEY` is also accepted as a fallback for OpenAI usage.
 
+## CLI Options
+
+- `lecture-notes [PATH]`
+- `--model <name>`
 - `--api-key <key>`
 - `--base-url <url>`
-- `--include-glob <pattern>` 반복 가능
-- `--exclude-dir <name>` 반복 가능
+- `--include-glob <pattern>` repeatable
+- `--exclude-dir <name>` repeatable
+- `--dry-run`
 - `--verbose`
 - `--fail-fast`
 
-## 동작 방식
+## How It Works
 
-`lecture-notes`는 실행 위치 또는 지정한 경로 아래에서 `*.txt`를 재귀 탐색합니다.
+For each `*.txt` file under the target directory:
 
-- 기본 제외 디렉터리: `.git`, `.venv`, `node_modules`, `__pycache__`
-- `foo.txt` 옆에 `foo.md`가 이미 있으면 해당 파일은 건너뜁니다.
-- 텍스트는 `utf-8`, `utf-8-sig`, `cp949` 순으로 읽기를 시도합니다.
-- 출력 파일은 항상 원본과 같은 폴더의 같은 이름 `md`로 저장됩니다.
-- 기본 실행만으로도 파일별 진행 상황이 `[현재/전체]` 형식으로 출력됩니다.
-- `--verbose`를 주면 단계별 진행 로그를 추가로 출력합니다.
-- 한글 파일명과 공백이 포함된 파일명도 `pathlib` 기반으로 그대로 처리합니다.
-- 모델 호출은 OpenAI Python SDK의 `chat.completions.create(...)`를 사용하므로, OpenAI와 OpenAI 호환 Chat Completions API 서버에 적합합니다.
+1. Correct transcription mistakes while preserving meaning.
+2. Reformat the transcript into readable paragraphs.
+3. Generate a compact summary focused on review-worthy points.
 
-최종 Markdown 형식:
+The tool then writes a sibling Markdown file with the same basename:
+
+- `lecture.txt` -> `lecture.md`
+- if `lecture.md` already exists, that `txt` file is skipped
+
+Default excluded directories:
+
+- `.git`
+- `.venv`
+- `node_modules`
+- `__pycache__`
+
+Text decoding fallback order:
+
+- `utf-8`
+- `utf-8-sig`
+- `cp949`
+
+Additional behavior:
+
+- Korean filenames and filenames with spaces are supported.
+- Progress is printed per file even without `--verbose`.
+- `--verbose` adds per-stage pipeline logs.
+- Output is written through a temporary file and renamed into place.
+
+## Output Format
+
+Generated Markdown is Obsidian-friendly and uses headings instead of bracketed labels:
 
 ```md
 ## 요약
 
 ### 핵심 요약
-...
+- ...
 
 ### 교수님 강조 포인트
-...
+- ...
 
 ## 전체 전사문
-{formatted_transcript}
+
+...
 ```
 
-## 개발 테스트
+## Environment Variables
+
+- `LECTURE_NOTES_MODEL`: default model name
+- `LECTURE_NOTES_API_KEY`: API key for OpenAI or an OpenAI-compatible server
+- `LECTURE_NOTES_BASE_URL`: base URL for an OpenAI-compatible server
+- `OPENAI_API_KEY`: fallback API key for OpenAI
+
+CLI arguments take precedence over environment variables.
+
+## Development
+
+Run tests:
 
 ```bash
 python -m unittest discover -s tests
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
