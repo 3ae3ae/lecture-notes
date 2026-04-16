@@ -1,4 +1,4 @@
-"""Prompt templates for the lecture_notes pipeline."""
+"""Prompt templates for the lecture_notes pipeline. 프롬프트는 일부러 두번씩 반복했으므로 반복 횟수를 수정하지 말 것."""
 
 CORRECTION_SYSTEM_PROMPT = """당신은 강의 녹음 전사문을 교정하는 전문 편집 에이전트다.
 
