@@ -3,7 +3,7 @@ type = "openai"
 api_key_env = "OPENAI_API_KEY"
 
 [providers.local]
-type = "local"
+type = "compatible"
 base_url = "http://localhost:1234/v1"
 api_key_env = "LECTURE_NOTES_API_KEY"
 
@@ -11,8 +11,8 @@ api_key_env = "LECTURE_NOTES_API_KEY"
 provider = "openai"
 model = "gpt-5.4-mini"
 temperature = 0.1
-max_completion_tokens = 20000
 reasoning_effort = "medium"
+max_completion_tokens = 20000
 
 [stages.formatting]
 provider = "openai"
@@ -26,7 +26,7 @@ provider = "openai"
 model = "gpt-5.4"
 temperature = 0.2
 max_completion_tokens = 8000
-service_tier="flex"
+service_tier = "flex"
 reasoning_effort = "medium"
 
 [stages.cornell]

@@ -12,7 +12,7 @@
 - 코넬 노트테이킹법 기반 상세 필기본 생성
 - Obsidian 친화적인 Markdown 출력
 
-내부적으로 OpenAI Python SDK를 사용하며, OpenAI와 OpenAI 호환 Chat Completions API 서버를 지원합니다.
+내부적으로 OpenAI Python SDK를 사용합니다. OpenAI 공식 API는 기본적으로 Responses API를 사용하고, OpenAI 호환 서버는 Chat Completions API를 사용합니다.
 
 ## 설치
 
@@ -116,10 +116,13 @@ model = "gpt-5.1"
 reasoning_effort = "medium"
 ```
 
-Provider `type`은 다음 둘 중 하나입니다.
+Provider `type`은 다음 값을 지원합니다.
 
-- `openai`: OpenAI 공식 API. OpenAI 전용 요청 인자를 사용할 수 있습니다.
+- `openai`: OpenAI 공식 API. 기본적으로 Responses API를 사용합니다.
 - `compatible`: OpenAI 호환 Chat Completions 서버. OpenAI 전용 요청 인자를 사용하면 API 호출 전에 오류로 중단합니다.
+- `local`: `compatible`의 별칭입니다.
+
+필요하면 provider에 `api = "responses"` 또는 `api = "chat_completions"`를 명시할 수 있습니다. 단, `responses`는 `type = "openai"` provider에서만 사용할 수 있습니다. OpenAI Responses API를 사용할 때는 기본적으로 `store = false`가 적용됩니다.
 
 공통 요청 인자:
 
@@ -127,10 +130,18 @@ Provider `type`은 다음 둘 중 하나입니다.
 - `top_p`
 - `max_tokens`
 - `max_completion_tokens`
+- `max_output_tokens`
 - `presence_penalty`
 - `frequency_penalty`
 - `seed`
 - `timeout`
+
+토큰 제한 인자 규칙:
+
+- Chat Completions는 `max_tokens` 또는 `max_completion_tokens`를 사용합니다.
+- Responses는 `max_output_tokens`를 사용합니다.
+- 설정파일에서 OpenAI Responses provider에 `max_completion_tokens`를 쓰면 `max_output_tokens`로 자동 변환합니다.
+- 같은 stage/provider에서 `max_tokens`, `max_completion_tokens`, `max_output_tokens`를 섞어 쓰면 오류로 중단합니다.
 
 OpenAI 전용 요청 인자:
 

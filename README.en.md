@@ -12,7 +12,7 @@ It is designed for cases where you already have raw transcript text and want:
 - detailed Cornell note-taking style notes
 - Obsidian-friendly Markdown output
 
-The CLI uses OpenAI's Python SDK and works with both OpenAI and OpenAI-compatible Chat Completions APIs.
+The CLI uses OpenAI's Python SDK. Official OpenAI providers use the Responses API by default, while OpenAI-compatible providers use the Chat Completions API.
 
 ## Install
 
@@ -118,8 +118,11 @@ reasoning_effort = "medium"
 
 Provider `type` can be:
 
-- `openai`: the official OpenAI API. OpenAI-only request options are allowed.
+- `openai`: the official OpenAI API. Uses the Responses API by default.
 - `compatible`: an OpenAI-compatible Chat Completions server. OpenAI-only request options are rejected before any API call.
+- `local`: an alias for `compatible`.
+
+You can explicitly set `api = "responses"` or `api = "chat_completions"` on a provider. `responses` is only valid for `type = "openai"` providers. When the Responses API is used, `store = false` is applied by default.
 
 Common request options:
 
@@ -127,10 +130,18 @@ Common request options:
 - `top_p`
 - `max_tokens`
 - `max_completion_tokens`
+- `max_output_tokens`
 - `presence_penalty`
 - `frequency_penalty`
 - `seed`
 - `timeout`
+
+Token limit rules:
+
+- Chat Completions uses `max_tokens` or `max_completion_tokens`.
+- Responses uses `max_output_tokens`.
+- For OpenAI Responses providers, `max_completion_tokens` in the config is automatically converted to `max_output_tokens`.
+- Mixing `max_tokens`, `max_completion_tokens`, and `max_output_tokens` in the same stage/provider is rejected.
 
 OpenAI-only request options:
 

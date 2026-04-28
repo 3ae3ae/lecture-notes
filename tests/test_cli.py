@@ -167,6 +167,7 @@ class MainTests(unittest.TestCase):
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=Path(tmpdir)),
                 mock.patch("lecture_notes.cli._build_client_from_provider", return_value=object()),
                 mock.patch("lecture_notes.cli.run_pipeline_with_progress", side_effect=fake_pipeline),
                 redirect_stdout(stdout),
@@ -198,6 +199,7 @@ class MainTests(unittest.TestCase):
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=Path(tmpdir)),
                 mock.patch("lecture_notes.cli._build_client_from_provider", return_value=object()),
                 mock.patch("lecture_notes.cli.run_pipeline_with_progress", return_value=Result()),
                 redirect_stdout(stdout),
@@ -336,6 +338,8 @@ model = "gpt-test"
                 stage_configs["summary"].request_options["reasoning_effort"],
                 "minimal",
             )
+            self.assertEqual(stage_configs["summary"].api, "responses")
+            self.assertFalse(stage_configs["summary"].request_options["store"])
 
     def test_profile_overrides_top_level_stage_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
@@ -383,3 +387,134 @@ reasoning_effort = "minimal"
                 settings.stages["summary"].request_options["reasoning_effort"],
                 "minimal",
             )
+
+    def test_provider_api_defaults_and_local_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "openai-key", "LOCAL_API_KEY": "local-key"},
+            clear=True,
+        ):
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.local]
+type = "local"
+base_url = "http://localhost:1234/v1"
+api_key_env = "LOCAL_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-test"
+max_completion_tokens = 100
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-test"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+
+[stages.cornell]
+provider = "local"
+model = "local-test"
+max_completion_tokens = 50
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path)])
+            _, settings = cli._resolve_pipeline_settings(args)
+
+            self.assertEqual(settings.providers["openai"].api, "responses")
+            self.assertEqual(settings.providers["local"].type, "compatible")
+            self.assertEqual(settings.providers["local"].api, "chat_completions")
+            self.assertEqual(
+                settings.stages["correction"].request_options["max_output_tokens"],
+                100,
+            )
+            self.assertNotIn(
+                "max_completion_tokens",
+                settings.stages["correction"].request_options,
+            )
+            self.assertFalse(settings.stages["correction"].request_options["store"])
+            self.assertEqual(
+                settings.stages["cornell"].request_options["max_completion_tokens"],
+                50,
+            )
+
+    def test_invalid_provider_api_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api = "assistants"
+api_key_env = "OPENAI_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-test"
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-test"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path)])
+
+            with self.assertRaises(cli.ConfigError) as error:
+                cli._resolve_pipeline_settings(args)
+
+            self.assertIn("api must be", str(error.exception))
+
+    def test_responses_rejects_max_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-test"
+max_tokens = 100
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-test"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path)])
+
+            with self.assertRaises(cli.ConfigError) as error:
+                cli._resolve_pipeline_settings(args)
+
+            self.assertIn("max_tokens", str(error.exception))

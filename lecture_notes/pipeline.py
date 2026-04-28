@@ -31,6 +31,7 @@ class StageConfig:
     client: Any
     model: str
     request_options: dict[str, Any] = field(default_factory=dict)
+    api: str = "chat_completions"
 
 
 @dataclass(slots=True)
@@ -49,6 +50,56 @@ _STAGE_DETAILS = {
 }
 
 
+class ChatCompletionsModelClient:
+    def __init__(self, client: Any) -> None:
+        self.client = client
+
+    def create_text(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_text: str,
+        request_options: Mapping[str, Any],
+    ) -> str:
+        completion = self.client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ],
+            **request_options,
+        )
+        content = completion.choices[0].message.content
+        if content is None:
+            raise RuntimeError("OpenAI returned an empty response.")
+        return content.strip()
+
+
+class ResponsesModelClient:
+    def __init__(self, client: Any) -> None:
+        self.client = client
+
+    def create_text(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_text: str,
+        request_options: Mapping[str, Any],
+    ) -> str:
+        response = self.client.responses.create(
+            model=model,
+            instructions=system_prompt,
+            input=user_text,
+            **request_options,
+        )
+        content = getattr(response, "output_text", None)
+        if content is None:
+            raise RuntimeError("OpenAI returned an empty response.")
+        return content.strip()
+
+
 def _is_retryable_error(exc: Exception) -> bool:
     status_code = getattr(exc, "status_code", None)
     if status_code == 429 or (isinstance(status_code, int) and status_code >= 500):
@@ -58,44 +109,44 @@ def _is_retryable_error(exc: Exception) -> bool:
     return "timeout" in name or "rate" in name or "connection" in name
 
 
-def _call_chat_completion(
+def _model_client_for_stage(
+    stage_config: StageConfig,
+) -> ChatCompletionsModelClient | ResponsesModelClient:
+    if stage_config.api == "chat_completions":
+        return ChatCompletionsModelClient(stage_config.client)
+    if stage_config.api == "responses":
+        return ResponsesModelClient(stage_config.client)
+    raise ValueError(f"unsupported stage API: {stage_config.api}")
+
+
+def _call_model(
     *,
-    client: Any,
-    model: str,
+    stage_config: StageConfig,
     system_prompt: str,
     user_text: str,
-    request_options: Mapping[str, Any] | None = None,
     retry_config: RetryConfig | None = None,
 ) -> str:
-    kwargs = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
-        ],
-    }
-    if request_options:
-        kwargs.update(request_options)
-
     attempts = 1
     backoff_seconds = 1.0
     if retry_config is not None:
         attempts += max(0, retry_config.retries)
         backoff_seconds = retry_config.backoff_seconds
 
+    model_client = _model_client_for_stage(stage_config)
     for attempt_number in range(1, attempts + 1):
         try:
-            completion = client.chat.completions.create(**kwargs)
-            break
+            return model_client.create_text(
+                model=stage_config.model,
+                system_prompt=system_prompt,
+                user_text=user_text,
+                request_options=stage_config.request_options,
+            )
         except Exception as exc:
             if attempt_number >= attempts or not _is_retryable_error(exc):
                 raise
             time.sleep(backoff_seconds * (2 ** (attempt_number - 1)))
 
-    content = completion.choices[0].message.content
-    if content is None:
-        raise RuntimeError("OpenAI returned an empty response.")
-    return content.strip()
+    raise RuntimeError("OpenAI returned an empty response.")
 
 
 def run_pipeline(raw_text: str, client: "OpenAI", model: str) -> ProcessedDocument:
@@ -130,12 +181,10 @@ def run_pipeline_with_progress(
     stage_number, stage_name, system_prompt = _STAGE_DETAILS["correction"]
     if on_stage is not None:
         on_stage(stage_number, stage_name)
-    corrected_text = _call_chat_completion(
-        client=correction_config.client,
-        model=correction_config.model,
+    corrected_text = _call_model(
+        stage_config=correction_config,
         system_prompt=system_prompt,
         user_text=raw_text,
-        request_options=correction_config.request_options,
         retry_config=retry_config,
     )
 
@@ -143,12 +192,10 @@ def run_pipeline_with_progress(
     stage_number, stage_name, system_prompt = _STAGE_DETAILS["formatting"]
     if on_stage is not None:
         on_stage(stage_number, stage_name)
-    formatted_transcript = _call_chat_completion(
-        client=formatting_config.client,
-        model=formatting_config.model,
+    formatted_transcript = _call_model(
+        stage_config=formatting_config,
         system_prompt=system_prompt,
         user_text=corrected_text,
-        request_options=formatting_config.request_options,
         retry_config=retry_config,
     )
 
@@ -156,12 +203,10 @@ def run_pipeline_with_progress(
     stage_number, stage_name, system_prompt = _STAGE_DETAILS["summary"]
     if on_stage is not None:
         on_stage(stage_number, stage_name)
-    summary_text = _call_chat_completion(
-        client=summary_config.client,
-        model=summary_config.model,
+    summary_text = _call_model(
+        stage_config=summary_config,
         system_prompt=system_prompt,
         user_text=formatted_transcript,
-        request_options=summary_config.request_options,
         retry_config=retry_config,
     )
 
@@ -169,12 +214,10 @@ def run_pipeline_with_progress(
     stage_number, stage_name, system_prompt = _STAGE_DETAILS["cornell"]
     if on_stage is not None:
         on_stage(stage_number, stage_name)
-    cornell_notes_text = _call_chat_completion(
-        client=cornell_config.client,
-        model=cornell_config.model,
+    cornell_notes_text = _call_model(
+        stage_config=cornell_config,
         system_prompt=system_prompt,
         user_text=formatted_transcript,
-        request_options=cornell_config.request_options,
         retry_config=retry_config,
     )
     return ProcessedDocument(

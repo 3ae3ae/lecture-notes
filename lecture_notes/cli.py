@@ -27,6 +27,7 @@ COMMON_REQUEST_OPTIONS = {
     "top_p",
     "max_tokens",
     "max_completion_tokens",
+    "max_output_tokens",
     "presence_penalty",
     "frequency_penalty",
     "seed",
@@ -52,6 +53,7 @@ class ConfigError(ValueError):
 class ProviderConfig:
     name: str
     type: str
+    api: str
     base_url: str | None
     api_key: str | None
     request_options: dict[str, Any] = field(default_factory=dict)
@@ -62,6 +64,7 @@ class StageSettings:
     name: str
     provider_name: str
     model: str
+    api: str
     request_options: dict[str, Any] = field(default_factory=dict)
 
 
@@ -302,6 +305,7 @@ def _request_options_from_table(
 def _validate_request_options(
     *,
     provider_type: str,
+    api: str,
     options: Mapping[str, Any],
     context: str,
 ) -> None:
@@ -309,6 +313,20 @@ def _validate_request_options(
         raise ConfigError(
             f"{context} cannot set both max_tokens and max_completion_tokens."
         )
+    if "max_tokens" in options and "max_output_tokens" in options:
+        raise ConfigError(
+            f"{context} cannot set both max_tokens and max_output_tokens."
+        )
+    if "max_completion_tokens" in options and "max_output_tokens" in options:
+        raise ConfigError(
+            f"{context} cannot set both max_completion_tokens and max_output_tokens."
+        )
+    if api == "chat_completions" and "max_output_tokens" in options:
+        raise ConfigError(
+            f"{context} cannot use max_output_tokens with chat_completions API."
+        )
+    if api == "responses" and "max_tokens" in options:
+        raise ConfigError(f"{context} cannot use max_tokens with responses API.")
     if provider_type == "compatible":
         openai_only = sorted(set(options) & OPENAI_ONLY_REQUEST_OPTIONS)
         if openai_only:
@@ -316,6 +334,49 @@ def _validate_request_options(
                 f"{context} uses OpenAI-only option(s) with compatible provider: "
                 f"{', '.join(openai_only)}"
             )
+
+
+def _normalize_provider_type(provider_type: object, context: str) -> str:
+    if provider_type == "local":
+        return "compatible"
+    if provider_type in {"openai", "compatible"}:
+        return str(provider_type)
+    raise ConfigError(f"{context}.type must be 'openai', 'compatible', or 'local'.")
+
+
+def _default_api_for_provider_type(provider_type: str) -> str:
+    if provider_type == "openai":
+        return "responses"
+    return "chat_completions"
+
+
+def _normalize_provider_api(
+    api: object,
+    *,
+    provider_type: str,
+    context: str,
+) -> str:
+    if api is None:
+        return _default_api_for_provider_type(provider_type)
+    if api in {"responses", "chat_completions"}:
+        normalized_api = str(api)
+        if provider_type == "compatible" and normalized_api == "responses":
+            raise ConfigError(f"{context}.api='responses' requires type='openai'.")
+        return normalized_api
+    raise ConfigError(f"{context}.api must be 'responses' or 'chat_completions'.")
+
+
+def _normalize_request_options_for_api(
+    options: Mapping[str, Any],
+    *,
+    api: str,
+) -> dict[str, Any]:
+    normalized = dict(options)
+    if api == "responses":
+        if "max_completion_tokens" in normalized:
+            normalized["max_output_tokens"] = normalized.pop("max_completion_tokens")
+        normalized.setdefault("store", False)
+    return normalized
 
 
 def _resolve_api_key(*, explicit: str | None, env_name: str | None) -> str | None:
@@ -384,6 +445,7 @@ def _implicit_pipeline_settings(args: argparse.Namespace) -> PipelineSettings:
     provider = ProviderConfig(
         name="default",
         type=provider_type,
+        api=_default_api_for_provider_type(provider_type),
         base_url=base_url,
         api_key=api_key,
     )
@@ -392,6 +454,7 @@ def _implicit_pipeline_settings(args: argparse.Namespace) -> PipelineSettings:
             name=stage_name,
             provider_name="default",
             model=model,
+            api=provider.api,
         )
         for stage_name in STAGE_NAMES
     }
@@ -406,14 +469,18 @@ def _parse_provider_configs(
         raise ConfigError("config file must define at least one provider.")
 
     providers: dict[str, ProviderConfig] = {}
-    provider_keys = {"type", "base_url", "api_key_env"}
+    provider_keys = {"type", "api", "base_url", "api_key_env"}
     for provider_name, raw_provider in providers_table.items():
         provider_table = _expect_table(raw_provider, f"providers.{provider_name}")
-        provider_type = provider_table.get("type", "compatible")
-        if provider_type not in {"openai", "compatible"}:
-            raise ConfigError(
-                f"providers.{provider_name}.type must be 'openai' or 'compatible'."
-            )
+        provider_type = _normalize_provider_type(
+            provider_table.get("type", "compatible"),
+            f"providers.{provider_name}",
+        )
+        provider_api = _normalize_provider_api(
+            provider_table.get("api"),
+            provider_type=provider_type,
+            context=f"providers.{provider_name}",
+        )
         options = _request_options_from_table(
             provider_table,
             known_keys=provider_keys,
@@ -421,9 +488,11 @@ def _parse_provider_configs(
         )
         _validate_request_options(
             provider_type=provider_type,
+            api=provider_api,
             options=options,
             context=f"providers.{provider_name}",
         )
+        options = _normalize_request_options_for_api(options, api=provider_api)
         api_key_env = provider_table.get("api_key_env")
         if api_key_env is not None and not isinstance(api_key_env, str):
             raise ConfigError(f"providers.{provider_name}.api_key_env must be a string.")
@@ -433,6 +502,7 @@ def _parse_provider_configs(
         providers[provider_name] = ProviderConfig(
             name=provider_name,
             type=provider_type,
+            api=provider_api,
             base_url=base_url,
             api_key=_resolve_api_key(explicit=None, env_name=api_key_env),
             request_options=options,
@@ -500,13 +570,19 @@ def _parse_stage_settings(
         request_options = {**provider.request_options, **stage_options}
         _validate_request_options(
             provider_type=provider.type,
+            api=provider.api,
             options=request_options,
             context=f"stages.{stage_name}",
+        )
+        request_options = _normalize_request_options_for_api(
+            request_options,
+            api=provider.api,
         )
         stages[stage_name] = StageSettings(
             name=stage_name,
             provider_name=provider_name,
             model=model,
+            api=provider.api,
             request_options=request_options,
         )
 
@@ -560,6 +636,7 @@ def _build_stage_configs(settings: PipelineSettings) -> dict[str, StageConfig]:
             name=stage_name,
             client=client_cache[stage.provider_name],
             model=stage.model,
+            api=stage.api,
             request_options=dict(stage.request_options),
         )
     return stage_configs

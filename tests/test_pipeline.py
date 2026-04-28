@@ -35,6 +35,21 @@ class _FakeCompletions:
         return _FakeCompletion(content)
 
 
+class _FakeResponse:
+    def __init__(self, content: str) -> None:
+        self.output_text = content
+
+
+class _FakeResponses:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def create(self, **kwargs: object) -> _FakeResponse:
+        self.calls.append(kwargs)
+        content = f"response-stage-{len(self.calls)}"
+        return _FakeResponse(content)
+
+
 class _FakeChat:
     def __init__(self) -> None:
         self.completions = _FakeCompletions()
@@ -43,6 +58,7 @@ class _FakeChat:
 class _FakeClient:
     def __init__(self) -> None:
         self.chat = _FakeChat()
+        self.responses = _FakeResponses()
 
 
 class PipelineTests(unittest.TestCase):
@@ -130,3 +146,80 @@ class PipelineTests(unittest.TestCase):
             openai_client.chat.completions.calls[1]["reasoning_effort"],
             "medium",
         )
+
+    def test_responses_stage_uses_responses_api_shape(self) -> None:
+        client = _FakeClient()
+        stage_configs = {
+            "correction": StageConfig(
+                name="correction",
+                client=client,
+                model="gpt-test",
+                api="responses",
+                request_options={"max_output_tokens": 100, "store": False},
+            ),
+            "formatting": StageConfig(
+                name="formatting",
+                client=client,
+                model="gpt-test",
+                api="responses",
+            ),
+            "summary": StageConfig(
+                name="summary",
+                client=client,
+                model="gpt-test",
+                api="responses",
+            ),
+            "cornell": StageConfig(
+                name="cornell",
+                client=client,
+                model="gpt-test",
+                api="responses",
+            ),
+        }
+
+        result = run_pipeline_with_progress("raw text", stage_configs=stage_configs)
+
+        self.assertEqual(result.corrected_text, "response-stage-1")
+        self.assertEqual(client.chat.completions.calls, [])
+        first_call = client.responses.calls[0]
+        self.assertEqual(first_call["model"], "gpt-test")
+        self.assertIn("instructions", first_call)
+        self.assertEqual(first_call["input"], "raw text")
+        self.assertEqual(first_call["max_output_tokens"], 100)
+        self.assertFalse(first_call["store"])
+
+    def test_mixed_pipeline_can_use_responses_and_chat_completions(self) -> None:
+        openai_client = _FakeClient()
+        local_client = _FakeClient()
+        stage_configs = {
+            "correction": StageConfig(
+                name="correction",
+                client=openai_client,
+                model="gpt-test",
+                api="responses",
+            ),
+            "formatting": StageConfig(
+                name="formatting",
+                client=openai_client,
+                model="gpt-test",
+                api="responses",
+            ),
+            "summary": StageConfig(
+                name="summary",
+                client=openai_client,
+                model="gpt-test",
+                api="responses",
+            ),
+            "cornell": StageConfig(
+                name="cornell",
+                client=local_client,
+                model="local-test",
+                api="chat_completions",
+            ),
+        }
+
+        result = run_pipeline_with_progress("raw text", stage_configs=stage_configs)
+
+        self.assertEqual(len(openai_client.responses.calls), 3)
+        self.assertEqual(len(local_client.chat.completions.calls), 1)
+        self.assertEqual(result.cornell_notes_text, "stage-1")
