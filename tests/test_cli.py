@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import io
 import os
-import sys
 import tempfile
-import types
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -104,12 +102,14 @@ class ReadWriteTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def test_main_dry_run_does_not_require_model_or_create_global_config(self) -> None:
+    def test_main_dry_run_creates_global_config_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(os.environ, {}, clear=True):
+            root = Path(tmpdir)
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (
-                mock.patch("lecture_notes.cli.Path.cwd", return_value=Path(tmpdir)),
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=root),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -117,7 +117,8 @@ class MainTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             self.assertEqual("", stderr.getvalue())
-            self.assertFalse((Path(tmpdir) / ".config" / "lecture-notes" / "config.toml").exists())
+            self.assertTrue((root / ".config" / "lecture-notes" / "config.toml").exists())
+            self.assertIn("created default config ->", stdout.getvalue())
 
     def test_main_reports_missing_explicit_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
@@ -148,7 +149,12 @@ class MainTests(unittest.TestCase):
 
             stdout = io.StringIO()
             stderr = io.StringIO()
-            with redirect_stdout(stdout), redirect_stderr(stderr):
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=root),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
                 exit_code = cli.main([tmpdir, "--dry-run"])
 
             output = stdout.getvalue()
@@ -304,6 +310,7 @@ class MainTests(unittest.TestCase):
             self.assertIn("local:", stdout.getvalue())
             self.assertIn("global:", stdout.getvalue())
             self.assertEqual("", stderr.getvalue())
+            self.assertFalse((Path(tmpdir) / ".config" / "lecture-notes" / "config.toml").exists())
             discover.assert_not_called()
 
     def test_main_continues_after_processing_error(self) -> None:
@@ -435,27 +442,6 @@ model = "gpt-test"
             self.assertIn("강의 노트 1.txt", stdout.getvalue())
             self.assertEqual("", stderr.getvalue())
 
-    def test_build_client_uses_openai_compatible_env_fallbacks(self) -> None:
-        with mock.patch.dict(
-            os.environ,
-            {
-                "LECTURE_NOTES_API_KEY": "compat-key",
-                "LECTURE_NOTES_BASE_URL": "https://compat.example/v1",
-            },
-            clear=True,
-        ):
-            args = cli.parse_args([])
-            mock_openai = mock.Mock()
-            fake_module = types.SimpleNamespace(OpenAI=mock_openai)
-
-            with mock.patch.dict(sys.modules, {"openai": fake_module}):
-                cli._build_client(args)
-
-            mock_openai.assert_called_once_with(
-                api_key="compat-key",
-                base_url="https://compat.example/v1",
-            )
-
     def test_main_rejects_openai_only_option_for_compatible_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
             os.environ,
@@ -567,7 +553,7 @@ model = "gpt-test"
             self.assertEqual(stage_configs["summary"].api, "responses")
             self.assertFalse(stage_configs["summary"].request_options["store"])
 
-    def test_cli_api_key_and_base_url_override_config_providers(self) -> None:
+    def test_full_cli_override_replaces_all_stages_with_compatible_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
             os.environ,
             {"OPENAI_API_KEY": "env-openai", "LOCAL_API_KEY": "env-local"},
@@ -609,6 +595,8 @@ model = "gpt-test"
                     tmpdir,
                     "--config",
                     str(config_path),
+                    "--model",
+                    "override-model",
                     "--api-key",
                     "cli-key",
                     "--base-url",
@@ -617,18 +605,88 @@ model = "gpt-test"
             )
             _, settings, _ = cli._resolve_pipeline_settings(args)
 
-            self.assertEqual(settings.providers["openai"].api_key, "cli-key")
-            self.assertEqual(settings.providers["local"].api_key, "cli-key")
-            self.assertEqual(
-                settings.providers["openai"].base_url,
-                "https://cli.example/v1",
-            )
-            self.assertEqual(
-                settings.providers["local"].base_url,
-                "https://cli.example/v1",
+            self.assertEqual(set(settings.providers), {"cli"})
+            provider = settings.providers["cli"]
+            self.assertEqual(provider.type, "compatible")
+            self.assertEqual(provider.api, "chat_completions")
+            self.assertEqual(provider.api_key, "cli-key")
+            self.assertEqual(provider.base_url, "https://cli.example/v1")
+            for stage in settings.stages.values():
+                self.assertEqual(stage.provider_name, "cli")
+                self.assertEqual(stage.api, "chat_completions")
+                self.assertEqual(stage.model, "override-model")
+
+    def test_partial_cli_override_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(DEFAULT_TEST_CONFIG, encoding="utf-8")
+
+            args = cli.parse_args(
+                [
+                    tmpdir,
+                    "--config",
+                    str(config_path),
+                    "--model",
+                    "override-model",
+                ]
             )
 
-    def test_env_base_url_overrides_config_provider_base_url(self) -> None:
+            with self.assertRaises(cli.ConfigError) as error:
+                cli._resolve_pipeline_settings(args)
+
+            self.assertIn("must be used together", str(error.exception))
+
+    def test_cli_override_rejects_openai_only_stage_options(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-test"
+
+[stages.correction.request.reasoning]
+effort = "minimal"
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-test"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args(
+                [
+                    tmpdir,
+                    "--config",
+                    str(config_path),
+                    "--model",
+                    "override-model",
+                    "--api-key",
+                    "cli-key",
+                    "--base-url",
+                    "https://cli.example/v1",
+                ]
+            )
+
+            with self.assertRaises(cli.ConfigError) as error:
+                cli._resolve_pipeline_settings(args)
+
+            self.assertIn("OpenAI-only option", str(error.exception))
+
+    def test_env_base_url_does_not_override_config_provider_base_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
             os.environ,
             {
@@ -643,10 +701,21 @@ model = "gpt-test"
             args = cli.parse_args([tmpdir, "--config", str(config_path)])
             _, settings, _ = cli._resolve_pipeline_settings(args)
 
-            self.assertEqual(
-                settings.providers["openai"].base_url,
-                "https://env.example/v1",
-            )
+            self.assertIsNone(settings.providers["openai"].base_url)
+
+    def test_env_model_does_not_override_config_stage_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "openai-key", "LECTURE_NOTES_MODEL": "env-model"},
+            clear=True,
+        ):
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(DEFAULT_TEST_CONFIG, encoding="utf-8")
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path)])
+            _, settings, _ = cli._resolve_pipeline_settings(args)
+
+            self.assertEqual(settings.stages["summary"].model, "global-model")
 
     def test_profile_overrides_top_level_stage_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(

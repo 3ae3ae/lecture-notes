@@ -1,6 +1,6 @@
 [project]
 name = "lecture-notes"
-version = "0.2.3"
+version = "0.2.4"
 description = "CLI tool to turn lecture transcript txt files into summarized markdown."
 readme = "README.md"
 requires-python = ">=3.11"

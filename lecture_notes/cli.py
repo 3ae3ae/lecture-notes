@@ -131,20 +131,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        help="Model name. Falls back to LECTURE_NOTES_MODEL.",
+        help=(
+            "Temporary model override. Must be used with --api-key and "
+            "--base-url."
+        ),
     )
     parser.add_argument(
         "--api-key",
         help=(
-            "API key for OpenAI or an OpenAI-compatible server. "
-            "Falls back to LECTURE_NOTES_API_KEY or OPENAI_API_KEY."
+            "Temporary API key override. Must be used with --model and "
+            "--base-url."
         ),
     )
     parser.add_argument(
         "--base-url",
         help=(
-            "Optional OpenAI-compatible base URL. "
-            "Falls back to LECTURE_NOTES_BASE_URL."
+            "Temporary OpenAI-compatible base URL override. Must be used "
+            "with --model and --api-key."
         ),
     )
     parser.add_argument(
@@ -360,13 +363,10 @@ def _load_config_file(
     if global_path.exists():
         return global_path, _read_config_file(global_path), False
 
-    if args.dry_run:
-        return None, {}, False
-
     try:
         _create_default_global_config(global_path)
-    except OSError:
-        return None, {}, False
+    except OSError as exc:
+        raise ConfigError(f"failed to create default config: {global_path}") from exc
     return global_path, _read_config_file(global_path), True
 
 
@@ -515,36 +515,10 @@ def _normalize_request_options_for_api(
     return normalized
 
 
-def _resolve_api_key(*, explicit: str | None, env_name: str | None) -> str | None:
-    if explicit:
-        return explicit
+def _resolve_api_key(*, env_name: str | None) -> str | None:
     if env_name:
         return os.environ.get(env_name)
     return None
-
-
-def _resolve_model(args: argparse.Namespace) -> str | None:
-    return args.model or os.environ.get("LECTURE_NOTES_MODEL")
-
-
-def _build_client(args: argparse.Namespace) -> "OpenAI":
-    from openai import OpenAI
-
-    client_kwargs: dict[str, str] = {}
-    api_key = (
-        args.api_key
-        or os.environ.get("LECTURE_NOTES_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-    )
-    if api_key:
-        client_kwargs["api_key"] = api_key
-    base_url = (
-        args.base_url
-        or os.environ.get("LECTURE_NOTES_BASE_URL")
-    )
-    if base_url:
-        client_kwargs["base_url"] = base_url
-    return OpenAI(**client_kwargs)
 
 
 def _build_client_from_provider(provider: ProviderConfig) -> "OpenAI":
@@ -558,48 +532,8 @@ def _build_client_from_provider(provider: ProviderConfig) -> "OpenAI":
     return OpenAI(**client_kwargs)
 
 
-def _implicit_pipeline_settings(args: argparse.Namespace) -> PipelineSettings:
-    model = _resolve_model(args)
-    if not model:
-        raise ConfigError(
-            "model is required. Pass --model or set LECTURE_NOTES_MODEL."
-        )
-
-    base_url = args.base_url or os.environ.get("LECTURE_NOTES_BASE_URL")
-    provider_type = "compatible" if base_url else "openai"
-    api_key = (
-        args.api_key
-        or os.environ.get("LECTURE_NOTES_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-    )
-    if not api_key:
-        raise ConfigError(
-            "API key is required. Pass --api-key or set "
-            "LECTURE_NOTES_API_KEY or OPENAI_API_KEY."
-        )
-
-    provider = ProviderConfig(
-        name="default",
-        type=provider_type,
-        api=_default_api_for_provider_type(provider_type),
-        base_url=base_url,
-        api_key=api_key,
-    )
-    stages = {
-        stage_name: StageSettings(
-            name=stage_name,
-            provider_name="default",
-            model=model,
-            api=provider.api,
-        )
-        for stage_name in STAGE_NAMES
-    }
-    return PipelineSettings(providers={"default": provider}, stages=stages)
-
-
 def _parse_provider_configs(
     config_data: Mapping[str, Any],
-    args: argparse.Namespace,
 ) -> dict[str, ProviderConfig]:
     providers_table = _expect_table(config_data.get("providers", {}), "providers")
     if not providers_table:
@@ -637,20 +571,15 @@ def _parse_provider_configs(
         api_key_env = provider_table.get("api_key_env")
         if api_key_env is not None and not isinstance(api_key_env, str):
             raise ConfigError(f"providers.{provider_name}.api_key_env must be a string.")
-        configured_base_url = provider_table.get("base_url")
-        if configured_base_url is not None and not isinstance(configured_base_url, str):
+        base_url = provider_table.get("base_url")
+        if base_url is not None and not isinstance(base_url, str):
             raise ConfigError(f"providers.{provider_name}.base_url must be a string.")
-        base_url = (
-            args.base_url
-            or os.environ.get("LECTURE_NOTES_BASE_URL")
-            or configured_base_url
-        )
         providers[provider_name] = ProviderConfig(
             name=provider_name,
             type=provider_type,
             api=provider_api,
             base_url=base_url,
-            api_key=_resolve_api_key(explicit=args.api_key, env_name=api_key_env),
+            api_key=_resolve_api_key(env_name=api_key_env),
             request_options=options,
         )
     return providers
@@ -703,7 +632,7 @@ def _parse_stage_settings(
                 f"stages.{stage_name}.provider references unknown provider: "
                 f"{provider_name}"
             )
-        model = args.model or stage_table.get("model")
+        model = stage_table.get("model")
         if not isinstance(model, str) or not model:
             raise ConfigError(f"stages.{stage_name}.model must be a string.")
 
@@ -755,20 +684,63 @@ def _pipeline_settings_from_config(
             f"config file has unknown top-level table(s): "
             f"{', '.join(sorted(unknown_root_keys))}"
         )
-    providers = _parse_provider_configs(config_data, args)
+    providers = _parse_provider_configs(config_data)
     stages = _parse_stage_settings(config_data, providers, args)
     return PipelineSettings(providers=providers, stages=stages)
+
+
+def _has_full_cli_override(args: argparse.Namespace) -> bool:
+    override_values = (args.model, args.api_key, args.base_url)
+    provided = [value is not None for value in override_values]
+    if any(provided) and not all(provided):
+        raise ConfigError("--model, --api-key, and --base-url must be used together.")
+    if all(provided) and not all(isinstance(value, str) and value for value in override_values):
+        raise ConfigError("--model, --api-key, and --base-url cannot be empty.")
+    return all(provided)
+
+
+def _apply_cli_override(
+    settings: PipelineSettings,
+    args: argparse.Namespace,
+) -> PipelineSettings:
+    if not _has_full_cli_override(args):
+        return settings
+
+    provider = ProviderConfig(
+        name="cli",
+        type="compatible",
+        api="chat_completions",
+        base_url=args.base_url,
+        api_key=args.api_key,
+    )
+    stages: dict[str, StageSettings] = {}
+    for stage_name in STAGE_NAMES:
+        stage = settings.stages[stage_name]
+        request_options = _copy_request_options(stage.request_options)
+        if request_options.get("store") is False:
+            request_options.pop("store")
+        _validate_request_options(
+            provider_type=provider.type,
+            api=provider.api,
+            options=request_options,
+            context=f"stages.{stage_name}",
+        )
+        stages[stage_name] = StageSettings(
+            name=stage_name,
+            provider_name=provider.name,
+            model=args.model,
+            api=provider.api,
+            request_options=request_options,
+        )
+    return PipelineSettings(providers={provider.name: provider}, stages=stages)
 
 
 def _resolve_pipeline_settings(
     args: argparse.Namespace,
 ) -> tuple[Path | None, PipelineSettings, bool]:
     config_path, config_data, created_config = _load_config_file(args)
-    if not config_data:
-        if args.profile != "default":
-            raise ConfigError("--profile requires a config file.")
-        return config_path, _implicit_pipeline_settings(args), created_config
-    return config_path, _pipeline_settings_from_config(config_data, args), created_config
+    settings = _pipeline_settings_from_config(config_data, args)
+    return config_path, _apply_cli_override(settings, args), created_config
 
 
 def _build_stage_configs(settings: PipelineSettings) -> dict[str, StageConfig]:
@@ -901,17 +873,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     stage_configs: Mapping[str, StageConfig] | None = None
-    if not args.dry_run:
-        try:
-            config_path, pipeline_settings, created_config = _resolve_pipeline_settings(args)
+    try:
+        config_path, pipeline_settings, created_config = _resolve_pipeline_settings(args)
+        if not args.dry_run:
             stage_configs = _build_stage_configs(pipeline_settings)
-        except ConfigError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-        if created_config and config_path is not None:
-            print(f"created default config -> {_format_config_path(config_path)}")
-        if config_path is not None:
-            _log(f"using config {config_path}", verbose=args.verbose)
+    except ConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if created_config and config_path is not None:
+        print(f"created default config -> {_format_config_path(config_path)}")
+    if config_path is not None:
+        _log(f"using config {config_path}", verbose=args.verbose)
 
     txt_files = discover_txt_files(root, include_globs, exclude_dirs)
     if args.limit is not None:

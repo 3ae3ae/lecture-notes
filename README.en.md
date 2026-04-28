@@ -36,11 +36,11 @@ uv tool install .
 
 ## Quick Start
 
-Set your model and API key:
+On first use, the CLI creates a global config file when none exists. The default config references the `OPENAI_API_KEY` environment variable.
 
 ```bash
-export LECTURE_NOTES_MODEL="gpt-4o-mini"
-export LECTURE_NOTES_API_KEY="your-api-key"
+lecture-notes ./lectures --dry-run
+export OPENAI_API_KEY="your-api-key"
 ```
 
 Run in the current directory:
@@ -69,17 +69,25 @@ lecture-notes ./lectures --verbose
 
 ## OpenAI-Compatible Servers
 
-You can use OpenAI-compatible providers by setting a base URL and model name:
+You can use OpenAI-compatible providers by setting a provider base URL and stage model in the config:
 
-```bash
-export LECTURE_NOTES_BASE_URL="https://your-openai-compatible-server/v1"
-export LECTURE_NOTES_API_KEY="your-api-key"
-export LECTURE_NOTES_MODEL="your-model-name"
+```toml
+[providers.local]
+type = "compatible"
+base_url = "https://your-openai-compatible-server/v1"
+api_key_env = "LECTURE_NOTES_API_KEY"
 
-lecture-notes ./lectures
+[stages.correction]
+provider = "local"
+model = "your-model-name"
 ```
 
-`OPENAI_API_KEY` is also accepted as a fallback for OpenAI usage.
+Then set the environment variable referenced by `api_key_env` and run the CLI:
+
+```bash
+export LECTURE_NOTES_API_KEY="your-api-key"
+lecture-notes ./lectures
+```
 
 ## Config File
 
@@ -89,7 +97,7 @@ Use `lecture-notes.toml` when different stages should use different models or AP
 2. `lecture-notes.toml` in the current working directory
 3. The user-level config at `~/.config/lecture-notes/config.toml`
 
-If neither local nor global config exists and the command is not a dry run, the CLI creates the global default config on first use. This makes `uv tool install` usage work without manually copying a config file.
+If neither local nor global config exists, the CLI creates the global default config on first use. This makes `uv tool install` usage work without manually copying a config file.
 
 Inspect paths:
 
@@ -223,6 +231,8 @@ lecture-notes ./lectures --config ./my-lecture-notes.toml
 - `--retries <n>`
 - `--retry-backoff <seconds>`
 
+`--model`, `--api-key`, and `--base-url` only work when all three are provided together. In that mode, every stage temporarily uses one OpenAI-compatible provider. Supplying only some of the three options is rejected.
+
 ## How It Works
 
 For each `*.txt` file under the target directory:
@@ -290,14 +300,21 @@ Generated Markdown is Obsidian-friendly and uses headings instead of bracketed l
 
 ## Environment Variables
 
-- `LECTURE_NOTES_MODEL`: default model name
-- `LECTURE_NOTES_API_KEY`: API key for OpenAI or an OpenAI-compatible server
-- `LECTURE_NOTES_BASE_URL`: base URL for an OpenAI-compatible server
-- `OPENAI_API_KEY`: fallback API key for OpenAI
+Environment variables are not automatic fallbacks. The CLI reads an environment variable only when a config provider explicitly references it with `api_key_env = "OPENAI_API_KEY"`.
 
-Config-file providers use `api_key_env` to name the environment variable that contains the API key. Passing `--api-key` overrides the resolved API key for every config-file provider.
+Example:
 
-`--base-url` overrides provider `base_url` values from config files, and `LECTURE_NOTES_BASE_URL` overrides config-file `base_url` values. Config files are selected in this order: `--config`, `lecture-notes.toml` in the current working directory, then the global config.
+```toml
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+```
+
+```bash
+export OPENAI_API_KEY="your-api-key"
+```
+
+Config files are selected in this order: `--config`, `lecture-notes.toml` in the current working directory, then the global config.
 
 When installed with `uv tool`, the global config still lives at `~/.config/lecture-notes/config.toml`. Put `lecture-notes.toml` in a lecture folder when that folder needs settings that override the global config.
 
