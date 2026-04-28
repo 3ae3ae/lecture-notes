@@ -70,8 +70,18 @@ class ChatCompletionsModelClient:
             ],
             **request_options,
         )
-        content = completion.choices[0].message.content
-        if content is None:
+        choices = getattr(completion, "choices", None)
+        if not choices:
+            raise RuntimeError("OpenAI returned no chat completion choices.")
+        try:
+            choice = choices[0]
+        except (IndexError, TypeError) as exc:
+            raise RuntimeError("OpenAI returned no chat completion choices.") from exc
+        message = getattr(choice, "message", None)
+        if message is None:
+            raise RuntimeError("OpenAI returned a chat completion without a message.")
+        content = getattr(message, "content", None)
+        if content is None or not content.strip():
             raise RuntimeError("OpenAI returned an empty response.")
         return content.strip()
 

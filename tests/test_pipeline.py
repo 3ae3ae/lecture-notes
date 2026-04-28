@@ -20,9 +20,12 @@ class _FakeChoice:
         self.message = _FakeMessage(content)
 
 
+_DEFAULT_CHOICES = object()
+
+
 class _FakeCompletion:
-    def __init__(self, content: str) -> None:
-        self.choices = [_FakeChoice(content)]
+    def __init__(self, content: str, *, choices: object = _DEFAULT_CHOICES) -> None:
+        self.choices = [_FakeChoice(content)] if choices is _DEFAULT_CHOICES else choices
 
 
 class _FakeCompletions:
@@ -154,6 +157,41 @@ class PipelineTests(unittest.TestCase):
             openai_client.chat.completions.calls[1]["temperature"],
             0.2,
         )
+
+    def test_chat_completions_stage_rejects_missing_choices(self) -> None:
+        client = _FakeClient()
+        client.chat.completions.create = lambda **kwargs: _FakeCompletion(
+            "",
+            choices=None,
+        )
+        stage_configs = {
+            stage_name: StageConfig(
+                name=stage_name,
+                client=client,
+                model="local-test",
+                api="chat_completions",
+            )
+            for stage_name in ("correction", "formatting", "summary", "cornell")
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "no chat completion choices"):
+            run_pipeline_with_progress("raw text", stage_configs=stage_configs)
+
+    def test_chat_completions_stage_rejects_empty_content(self) -> None:
+        client = _FakeClient()
+        client.chat.completions.create = lambda **kwargs: _FakeCompletion("")
+        stage_configs = {
+            stage_name: StageConfig(
+                name=stage_name,
+                client=client,
+                model="local-test",
+                api="chat_completions",
+            )
+            for stage_name in ("correction", "formatting", "summary", "cornell")
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "empty response"):
+            run_pipeline_with_progress("raw text", stage_configs=stage_configs)
 
     def test_responses_stage_uses_responses_api_shape(self) -> None:
         client = _FakeClient()
