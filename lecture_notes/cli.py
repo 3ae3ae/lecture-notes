@@ -132,10 +132,16 @@ def normalize_summary_text(summary_text: str) -> str:
     return normalized
 
 
-def write_markdown(output_path: Path, summary_text: str, transcript_text: str) -> None:
+def write_markdown(
+    output_path: Path,
+    summary_text: str,
+    cornell_notes_text: str,
+    transcript_text: str,
+) -> None:
     normalized_summary = normalize_summary_text(summary_text)
     content = (
         f"## 요약\n\n{normalized_summary}\n\n"
+        f"## 코넬 노트\n\n{cornell_notes_text.strip()}\n\n"
         f"## 전체 전사문\n\n{transcript_text.strip()}\n"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -261,7 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 model=model,
                 on_stage=(
                     lambda stage_number, stage_name: _log(
-                        f"{progress_prefix} stage {stage_number}/3 {stage_name}",
+                        f"{progress_prefix} stage {stage_number}/4 {stage_name}",
                         verbose=args.verbose,
                     )
                 ),
@@ -270,6 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_markdown(
                 output_path,
                 summary_text=result.summary_text,
+                cornell_notes_text=result.cornell_notes_text,
                 transcript_text=result.formatted_transcript,
             )
             processed_count += 1

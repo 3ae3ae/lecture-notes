@@ -4,11 +4,12 @@
 
 ## 프로젝트 개요
 
-`lecture-notes`는 강의 전사 `*.txt` 파일을 찾아 다음 3단계 AI 파이프라인으로 처리하는 Python CLI입니다.
+`lecture-notes`는 강의 전사 `*.txt` 파일을 찾아 다음 4단계 AI 파이프라인으로 처리하는 Python CLI입니다.
 
 1. 전사 오류 교정
 2. 전사문 서식화
 3. 핵심 요약 생성
+4. 코넬 노트테이킹법 기반 상세 필기본 생성
 
 최종 결과물은 원본 `txt` 옆의 `md` 파일로 저장됩니다.
 
@@ -37,7 +38,7 @@ python -m unittest discover -s tests
 ## 주요 파일
 
 - `lecture_notes/cli.py`: CLI 인자 처리, 파일 탐색, 출력 저장, 진행 로그
-- `lecture_notes/pipeline.py`: 3단계 LLM 호출 파이프라인
+- `lecture_notes/pipeline.py`: 4단계 LLM 호출 파이프라인
 - `lecture_notes/prompts.py`: 각 단계 시스템 프롬프트
 - `tests/test_cli.py`: CLI/파일 처리 테스트
 - `tests/test_pipeline.py`: 파이프라인 호출 순서 테스트

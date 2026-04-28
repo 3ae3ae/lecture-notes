@@ -2,13 +2,14 @@
 
 [한국어 README](README.md)
 
-`lecture-notes` is a Python CLI that recursively finds lecture transcript `*.txt` files, runs them through a 3-step AI workflow, and writes polished Markdown notes next to the source files.
+`lecture-notes` is a Python CLI that recursively finds lecture transcript `*.txt` files, runs them through a 4-step AI workflow, and writes polished Markdown notes next to the source files.
 
 It is designed for cases where you already have raw transcript text and want:
 
 - corrected transcript text
 - readable paragraph formatting
 - a compact summary for review
+- detailed Cornell note-taking style notes
 - Obsidian-friendly Markdown output
 
 The CLI uses OpenAI's Python SDK and works with both OpenAI and OpenAI-compatible Chat Completions APIs.
@@ -99,6 +100,7 @@ For each `*.txt` file under the target directory:
 1. Correct transcription mistakes while preserving meaning.
 2. Reformat the transcript into readable paragraphs.
 3. Generate a compact summary focused on review-worthy points.
+4. Generate detailed Cornell note-taking style notes that can stand in for reading the full transcript.
 
 The tool then writes a sibling Markdown file with the same basename:
 
@@ -136,6 +138,17 @@ Generated Markdown is Obsidian-friendly and uses headings instead of bracketed l
 - ...
 
 ### 교수님 강조 포인트
+- ...
+
+## 코넬 노트
+
+### 단서 / 질문
+- ...
+
+### 필기
+- ...
+
+### 요약
 - ...
 
 ## 전체 전사문

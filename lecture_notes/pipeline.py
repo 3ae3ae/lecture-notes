@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from lecture_notes.prompts import (
     CORRECTION_SYSTEM_PROMPT,
+    CORNELL_NOTES_SYSTEM_PROMPT,
     FORMATTING_SYSTEM_PROMPT,
     SUMMARY_SYSTEM_PROMPT,
 )
@@ -20,6 +21,7 @@ class ProcessedDocument:
     corrected_text: str
     formatted_transcript: str
     summary_text: str
+    cornell_notes_text: str
 
 
 def _call_chat_completion(
@@ -76,8 +78,17 @@ def run_pipeline_with_progress(
         system_prompt=SUMMARY_SYSTEM_PROMPT,
         user_text=formatted_transcript,
     )
+    if on_stage is not None:
+        on_stage(4, "creating Cornell notes")
+    cornell_notes_text = _call_chat_completion(
+        client=client,
+        model=model,
+        system_prompt=CORNELL_NOTES_SYSTEM_PROMPT,
+        user_text=formatted_transcript,
+    )
     return ProcessedDocument(
         corrected_text=corrected_text,
         formatted_transcript=formatted_transcript,
         summary_text=summary_text,
+        cornell_notes_text=cornell_notes_text,
     )

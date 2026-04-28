@@ -45,7 +45,7 @@ class _FakeClient:
 
 
 class PipelineTests(unittest.TestCase):
-    def test_run_pipeline_preserves_three_stage_order(self) -> None:
+    def test_run_pipeline_preserves_four_stage_order(self) -> None:
         client = _FakeClient()
 
         result = run_pipeline("raw text", client=client, model="gpt-test")
@@ -54,11 +54,13 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result.corrected_text, "stage-1")
         self.assertEqual(result.formatted_transcript, "stage-2")
         self.assertEqual(result.summary_text, "stage-3")
+        self.assertEqual(result.cornell_notes_text, "stage-4")
 
         calls = client.chat.completions.calls
         self.assertEqual(calls[0]["messages"][1]["content"], "raw text")
         self.assertEqual(calls[1]["messages"][1]["content"], "stage-1")
         self.assertEqual(calls[2]["messages"][1]["content"], "stage-2")
+        self.assertEqual(calls[3]["messages"][1]["content"], "stage-2")
 
     def test_run_pipeline_with_progress_reports_all_stages(self) -> None:
         client = _FakeClient()
@@ -79,5 +81,6 @@ class PipelineTests(unittest.TestCase):
                 (1, "correcting transcript"),
                 (2, "formatting transcript"),
                 (3, "summarizing transcript"),
+                (4, "creating Cornell notes"),
             ],
         )
