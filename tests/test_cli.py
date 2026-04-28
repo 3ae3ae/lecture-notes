@@ -567,6 +567,87 @@ model = "gpt-test"
             self.assertEqual(stage_configs["summary"].api, "responses")
             self.assertFalse(stage_configs["summary"].request_options["store"])
 
+    def test_cli_api_key_and_base_url_override_config_providers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "env-openai", "LOCAL_API_KEY": "env-local"},
+            clear=True,
+        ):
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.local]
+type = "compatible"
+base_url = "http://localhost:1234/v1"
+api_key_env = "LOCAL_API_KEY"
+
+[stages.correction]
+provider = "local"
+model = "local-model"
+
+[stages.formatting]
+provider = "local"
+model = "local-model"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args(
+                [
+                    tmpdir,
+                    "--config",
+                    str(config_path),
+                    "--api-key",
+                    "cli-key",
+                    "--base-url",
+                    "https://cli.example/v1",
+                ]
+            )
+            _, settings, _ = cli._resolve_pipeline_settings(args)
+
+            self.assertEqual(settings.providers["openai"].api_key, "cli-key")
+            self.assertEqual(settings.providers["local"].api_key, "cli-key")
+            self.assertEqual(
+                settings.providers["openai"].base_url,
+                "https://cli.example/v1",
+            )
+            self.assertEqual(
+                settings.providers["local"].base_url,
+                "https://cli.example/v1",
+            )
+
+    def test_env_base_url_overrides_config_provider_base_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "openai-key",
+                "LECTURE_NOTES_BASE_URL": "https://env.example/v1",
+            },
+            clear=True,
+        ):
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(DEFAULT_TEST_CONFIG, encoding="utf-8")
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path)])
+            _, settings, _ = cli._resolve_pipeline_settings(args)
+
+            self.assertEqual(
+                settings.providers["openai"].base_url,
+                "https://env.example/v1",
+            )
+
     def test_profile_overrides_top_level_stage_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
             os.environ,

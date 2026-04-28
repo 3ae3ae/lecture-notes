@@ -295,9 +295,9 @@ Generated Markdown is Obsidian-friendly and uses headings instead of bracketed l
 - `LECTURE_NOTES_BASE_URL`: base URL for an OpenAI-compatible server
 - `OPENAI_API_KEY`: fallback API key for OpenAI
 
-Config-file providers use `api_key_env` to name the environment variable that contains the API key.
+Config-file providers use `api_key_env` to name the environment variable that contains the API key. Passing `--api-key` overrides the resolved API key for every config-file provider.
 
-For simple runs without a config file, CLI arguments take precedence over environment variables.
+`--base-url` overrides provider `base_url` values from config files, and `LECTURE_NOTES_BASE_URL` overrides config-file `base_url` values. Config files are selected in this order: `--config`, `lecture-notes.toml` in the current working directory, then the global config.
 
 When installed with `uv tool`, the global config still lives at `~/.config/lecture-notes/config.toml`. Put `lecture-notes.toml` in a lecture folder when that folder needs settings that override the global config.
 

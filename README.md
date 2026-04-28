@@ -295,9 +295,9 @@ lecture-notes ./lectures --config ./my-lecture-notes.toml
 - `LECTURE_NOTES_BASE_URL`: OpenAI 호환 서버 base URL
 - `OPENAI_API_KEY`: OpenAI 사용 시 fallback API 키
 
-설정파일 provider에서는 `api_key_env` 값으로 사용할 환경변수 이름을 직접 지정합니다.
+설정파일 provider에서는 `api_key_env` 값으로 사용할 환경변수 이름을 직접 지정합니다. `--api-key`를 넘기면 설정파일의 모든 provider API 키보다 우선합니다.
 
-설정파일을 쓰지 않는 단순 실행에서는 CLI 인자가 환경변수보다 우선합니다.
+`--base-url`은 설정파일 provider의 `base_url`보다 우선하고, `LECTURE_NOTES_BASE_URL`은 설정파일 `base_url`보다 우선합니다. 전체 설정파일 탐색 순서는 `--config`, 현재 작업 디렉터리의 `lecture-notes.toml`, 전역 설정 순서입니다.
 
 `uv tool`로 설치한 경우에도 전역 설정은 `~/.config/lecture-notes/config.toml`에 저장됩니다. 폴더별 설정을 쓰고 싶으면 해당 폴더에 `lecture-notes.toml`을 두면 전역 설정보다 우선 적용됩니다.
 

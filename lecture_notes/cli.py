@@ -599,6 +599,7 @@ def _implicit_pipeline_settings(args: argparse.Namespace) -> PipelineSettings:
 
 def _parse_provider_configs(
     config_data: Mapping[str, Any],
+    args: argparse.Namespace,
 ) -> dict[str, ProviderConfig]:
     providers_table = _expect_table(config_data.get("providers", {}), "providers")
     if not providers_table:
@@ -636,15 +637,20 @@ def _parse_provider_configs(
         api_key_env = provider_table.get("api_key_env")
         if api_key_env is not None and not isinstance(api_key_env, str):
             raise ConfigError(f"providers.{provider_name}.api_key_env must be a string.")
-        base_url = provider_table.get("base_url")
-        if base_url is not None and not isinstance(base_url, str):
+        configured_base_url = provider_table.get("base_url")
+        if configured_base_url is not None and not isinstance(configured_base_url, str):
             raise ConfigError(f"providers.{provider_name}.base_url must be a string.")
+        base_url = (
+            args.base_url
+            or os.environ.get("LECTURE_NOTES_BASE_URL")
+            or configured_base_url
+        )
         providers[provider_name] = ProviderConfig(
             name=provider_name,
             type=provider_type,
             api=provider_api,
             base_url=base_url,
-            api_key=_resolve_api_key(explicit=None, env_name=api_key_env),
+            api_key=_resolve_api_key(explicit=args.api_key, env_name=api_key_env),
             request_options=options,
         )
     return providers
@@ -749,7 +755,7 @@ def _pipeline_settings_from_config(
             f"config file has unknown top-level table(s): "
             f"{', '.join(sorted(unknown_root_keys))}"
         )
-    providers = _parse_provider_configs(config_data)
+    providers = _parse_provider_configs(config_data, args)
     stages = _parse_stage_settings(config_data, providers, args)
     return PipelineSettings(providers=providers, stages=stages)
 
