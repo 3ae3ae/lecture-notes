@@ -94,8 +94,18 @@ class ResponsesModelClient:
             input=user_text,
             **request_options,
         )
+        if getattr(response, "status", None) == "incomplete":
+            details = getattr(response, "incomplete_details", None)
+            reason = getattr(details, "reason", None)
+            if reason is None and isinstance(details, Mapping):
+                reason = details.get("reason")
+            message = "OpenAI returned an incomplete response."
+            if reason:
+                message = f"{message} reason={reason}"
+            raise RuntimeError(message)
+
         content = getattr(response, "output_text", None)
-        if content is None:
+        if content is None or not content.strip():
             raise RuntimeError("OpenAI returned an empty response.")
         return content.strip()
 

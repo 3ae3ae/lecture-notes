@@ -35,29 +35,35 @@ api_key_env = "LECTURE_NOTES_API_KEY"
 provider = "openai"
 model = "gpt-5.4-mini"
 temperature = 0.1
-reasoning_effort = "medium"
-max_completion_tokens = 20000
+max_output_tokens = 20000
+
+[stages.correction.request.reasoning]
+effort = "medium"
 
 [stages.formatting]
 provider = "openai"
 model = "gpt-5.4-mini"
 temperature = 0.1
-reasoning_effort = "minimal"
-max_completion_tokens = 20000
+max_output_tokens = 20000
+
+[stages.formatting.request.reasoning]
+effort = "minimal"
 
 [stages.summary]
 provider = "openai"
 model = "gpt-5.4"
 temperature = 0.2
-max_completion_tokens = 8000
+max_output_tokens = 8000
 service_tier = "flex"
-reasoning_effort = "medium"
+
+[stages.summary.request.reasoning]
+effort = "medium"
 
 [stages.cornell]
 provider = "openai"
 model = "gpt-5.4"
 temperature = 0.2
-max_completion_tokens = 12000
+max_output_tokens = 12000
 """
 STAGE_NAMES = ("correction", "formatting", "summary", "cornell")
 COMMON_REQUEST_OPTIONS = {
@@ -72,7 +78,7 @@ COMMON_REQUEST_OPTIONS = {
     "timeout",
 }
 OPENAI_ONLY_REQUEST_OPTIONS = {
-    "reasoning_effort",
+    "reasoning",
     "service_tier",
     "prompt_cache_key",
     "prompt_cache_retention",
@@ -370,6 +376,35 @@ def _expect_table(value: object, context: str) -> dict[str, Any]:
     return value
 
 
+def _copy_request_options(options: Mapping[str, Any]) -> dict[str, Any]:
+    copied: dict[str, Any] = {}
+    for key, value in options.items():
+        if isinstance(value, dict):
+            copied[key] = _copy_request_options(value)
+        else:
+            copied[key] = value
+    return copied
+
+
+def _merge_request_options(
+    base: Mapping[str, Any],
+    override: Mapping[str, Any],
+) -> dict[str, Any]:
+    merged = _copy_request_options(base)
+    for key, value in override.items():
+        if (
+            key in merged
+            and isinstance(merged[key], dict)
+            and isinstance(value, dict)
+        ):
+            merged[key] = _merge_request_options(merged[key], value)
+        elif isinstance(value, dict):
+            merged[key] = _copy_request_options(value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def _request_options_from_table(
     table: Mapping[str, Any],
     *,
@@ -381,12 +416,23 @@ def _request_options_from_table(
         raise ConfigError(
             f"{context} has unknown option(s): {', '.join(sorted(unknown_keys))}"
         )
-    options = {key: table[key] for key in REQUEST_OPTIONS if key in table}
+    raw_request = table.get("request", {})
+    if raw_request is None:
+        raw_request = {}
+    request_options = _expect_table(raw_request, f"{context}.request")
+    options = _copy_request_options(request_options)
+    flat_options = {key: table[key] for key in REQUEST_OPTIONS if key in table}
+    options = _merge_request_options(options, flat_options)
     if "max_tokens" in options and "max_completion_tokens" in options:
         raise ConfigError(
             f"{context} cannot set both max_tokens and max_completion_tokens."
         )
     return options
+
+
+def _openai_only_request_options(options: Mapping[str, Any]) -> list[str]:
+    openai_only = set(options) & OPENAI_ONLY_REQUEST_OPTIONS
+    return sorted(openai_only)
 
 
 def _validate_request_options(
@@ -414,8 +460,12 @@ def _validate_request_options(
         )
     if api == "responses" and "max_tokens" in options:
         raise ConfigError(f"{context} cannot use max_tokens with responses API.")
+    if api == "responses" and "max_completion_tokens" in options:
+        raise ConfigError(
+            f"{context} cannot use max_completion_tokens with responses API."
+        )
     if provider_type == "compatible":
-        openai_only = sorted(set(options) & OPENAI_ONLY_REQUEST_OPTIONS)
+        openai_only = _openai_only_request_options(options)
         if openai_only:
             raise ConfigError(
                 f"{context} uses OpenAI-only option(s) with compatible provider: "
@@ -457,11 +507,10 @@ def _normalize_request_options_for_api(
     options: Mapping[str, Any],
     *,
     api: str,
+    context: str,
 ) -> dict[str, Any]:
-    normalized = dict(options)
+    normalized = _copy_request_options(options)
     if api == "responses":
-        if "max_completion_tokens" in normalized:
-            normalized["max_output_tokens"] = normalized.pop("max_completion_tokens")
         normalized.setdefault("store", False)
     return normalized
 
@@ -556,7 +605,7 @@ def _parse_provider_configs(
         raise ConfigError("config file must define at least one provider.")
 
     providers: dict[str, ProviderConfig] = {}
-    provider_keys = {"type", "api", "base_url", "api_key_env"}
+    provider_keys = {"type", "api", "base_url", "api_key_env", "request"}
     for provider_name, raw_provider in providers_table.items():
         provider_table = _expect_table(raw_provider, f"providers.{provider_name}")
         provider_type = _normalize_provider_type(
@@ -579,7 +628,11 @@ def _parse_provider_configs(
             options=options,
             context=f"providers.{provider_name}",
         )
-        options = _normalize_request_options_for_api(options, api=provider_api)
+        options = _normalize_request_options_for_api(
+            options,
+            api=provider_api,
+            context=f"providers.{provider_name}",
+        )
         api_key_env = provider_table.get("api_key_env")
         if api_key_env is not None and not isinstance(api_key_env, str):
             raise ConfigError(f"providers.{provider_name}.api_key_env must be a string.")
@@ -631,7 +684,7 @@ def _parse_stage_settings(
         raise ConfigError("config file must define stages.")
 
     stages: dict[str, StageSettings] = {}
-    stage_keys = {"provider", "model"}
+    stage_keys = {"provider", "model", "request"}
     for stage_name in STAGE_NAMES:
         if stage_name not in stages_table:
             raise ConfigError(f"missing stage config: {stage_name}")
@@ -654,7 +707,10 @@ def _parse_stage_settings(
             known_keys=stage_keys,
             context=f"stages.{stage_name}",
         )
-        request_options = {**provider.request_options, **stage_options}
+        request_options = _merge_request_options(
+            provider.request_options,
+            stage_options,
+        )
         _validate_request_options(
             provider_type=provider.type,
             api=provider.api,
@@ -664,6 +720,7 @@ def _parse_stage_settings(
         request_options = _normalize_request_options_for_api(
             request_options,
             api=provider.api,
+            context=f"stages.{stage_name}",
         )
         stages[stage_name] = StageSettings(
             name=stage_name,

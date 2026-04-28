@@ -483,7 +483,9 @@ model = "local-model"
 [stages.summary]
 provider = "local"
 model = "local-model"
-reasoning_effort = "minimal"
+
+[stages.summary.request.reasoning]
+effort = "minimal"
 
 [stages.cornell]
 provider = "local"
@@ -534,7 +536,9 @@ model = "local-model"
 [stages.summary]
 provider = "openai"
 model = "gpt-test"
-reasoning_effort = "minimal"
+
+[stages.summary.request.reasoning]
+effort = "minimal"
 
 [stages.cornell]
 provider = "openai"
@@ -557,8 +561,8 @@ model = "gpt-test"
             self.assertIs(stage_configs["formatting"].client, clients["local"])
             self.assertIs(stage_configs["summary"].client, clients["openai"])
             self.assertEqual(
-                stage_configs["summary"].request_options["reasoning_effort"],
-                "minimal",
+                stage_configs["summary"].request_options["reasoning"],
+                {"effort": "minimal"},
             )
             self.assertEqual(stage_configs["summary"].api, "responses")
             self.assertFalse(stage_configs["summary"].request_options["store"])
@@ -595,7 +599,9 @@ model = "full-model"
 [profiles.fast.stages.summary]
 provider = "openai"
 model = "fast-model"
-reasoning_effort = "minimal"
+
+[profiles.fast.stages.summary.request.reasoning]
+effort = "minimal"
 """,
                 encoding="utf-8",
             )
@@ -606,8 +612,8 @@ reasoning_effort = "minimal"
             self.assertEqual(settings.stages["correction"].model, "full-model")
             self.assertEqual(settings.stages["summary"].model, "fast-model")
             self.assertEqual(
-                settings.stages["summary"].request_options["reasoning_effort"],
-                "minimal",
+                settings.stages["summary"].request_options["reasoning"],
+                {"effort": "minimal"},
             )
 
     def test_provider_api_defaults_and_local_alias(self) -> None:
@@ -631,7 +637,7 @@ api_key_env = "LOCAL_API_KEY"
 [stages.correction]
 provider = "openai"
 model = "gpt-test"
-max_completion_tokens = 100
+max_output_tokens = 100
 
 [stages.formatting]
 provider = "openai"
@@ -740,3 +746,98 @@ model = "gpt-test"
                 cli._resolve_pipeline_settings(args)
 
             self.assertIn("max_tokens", str(error.exception))
+
+    def test_nested_request_tables_are_merged_for_provider_and_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "openai-key"},
+            clear=True,
+        ):
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+max_output_tokens = 1000
+
+[providers.openai.request.metadata]
+source = "lecture-notes"
+
+[providers.openai.request.reasoning]
+effort = "low"
+summary = "auto"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-test"
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-test"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+max_output_tokens = 2000
+
+[stages.summary.request.reasoning]
+effort = "medium"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path)])
+            _, settings, _ = cli._resolve_pipeline_settings(args)
+
+            summary_options = settings.stages["summary"].request_options
+            self.assertEqual(summary_options["max_output_tokens"], 2000)
+            self.assertEqual(
+                summary_options["reasoning"],
+                {"effort": "medium", "summary": "auto"},
+            )
+            self.assertEqual(
+                summary_options["metadata"],
+                {"source": "lecture-notes"},
+            )
+            self.assertFalse(summary_options["store"])
+
+    def test_responses_rejects_max_completion_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-test"
+max_completion_tokens = 100
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-test"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path)])
+
+            with self.assertRaises(cli.ConfigError) as error:
+                cli._resolve_pipeline_settings(args)
+
+            self.assertIn("max_completion_tokens", str(error.exception))

@@ -117,15 +117,19 @@ model = "qwen-transcriber"
 
 [stages.summary]
 provider = "openai"
-model = "gpt-5.1-mini"
+model = "gpt-5.4-mini"
 temperature = 0.2
-max_completion_tokens = 2000
-reasoning_effort = "minimal"
+max_output_tokens = 2000
+
+[stages.summary.request.reasoning]
+effort = "minimal"
 
 [stages.cornell]
 provider = "openai"
-model = "gpt-5.1"
-reasoning_effort = "medium"
+model = "gpt-5.4"
+
+[stages.cornell.request.reasoning]
+effort = "medium"
 ```
 
 Provider `type` can be:
@@ -135,6 +139,22 @@ Provider `type` can be:
 - `local`: an alias for `compatible`.
 
 You can explicitly set `api = "responses"` or `api = "chat_completions"` on a provider. `responses` is only valid for `type = "openai"` providers. When the Responses API is used, `store = false` is applied by default.
+
+Providers and stages can define a nested `[...request]` table. These values are passed to the OpenAI Python SDK as `responses.create(..., **request)` or `chat.completions.create(..., **request)`. Provider request values act as defaults, and stage request values override matching keys.
+
+```toml
+[providers.openai.request.metadata]
+app = "lecture-notes"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-5.4"
+max_output_tokens = 8000
+service_tier = "flex"
+
+[stages.summary.request.reasoning]
+effort = "medium"
+```
 
 Common request options:
 
@@ -152,12 +172,12 @@ Token limit rules:
 
 - Chat Completions uses `max_tokens` or `max_completion_tokens`.
 - Responses uses `max_output_tokens`.
-- For OpenAI Responses providers, `max_completion_tokens` in the config is automatically converted to `max_output_tokens`.
+- Responses providers reject `max_tokens` and `max_completion_tokens`.
 - Mixing `max_tokens`, `max_completion_tokens`, and `max_output_tokens` in the same stage/provider is rejected.
 
 OpenAI-only request options:
 
-- `reasoning_effort`
+- `reasoning`
 - `service_tier`
 - `prompt_cache_key`
 - `prompt_cache_retention`
@@ -170,8 +190,10 @@ Profiles can override stage settings under `[profiles.<name>.stages]`.
 ```toml
 [profiles.fast.stages.summary]
 provider = "openai"
-model = "gpt-5.1-mini"
-reasoning_effort = "minimal"
+model = "gpt-5.4-mini"
+
+[profiles.fast.stages.summary.request.reasoning]
+effort = "minimal"
 ```
 
 Run with:

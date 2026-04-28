@@ -11,26 +11,32 @@ api_key_env = "LECTURE_NOTES_API_KEY"
 provider = "openai"
 model = "gpt-5.4-mini"
 temperature = 0.1
-reasoning_effort = "medium"
-max_completion_tokens = 20000
+max_output_tokens = 20000
+
+[stages.correction.request.reasoning]
+effort = "medium"
 
 [stages.formatting]
 provider = "openai"
 model = "gpt-5.4-mini"
 temperature = 0.1
-reasoning_effort = "minimal"
-max_completion_tokens = 20000
+max_output_tokens = 20000
+
+[stages.formatting.request.reasoning]
+effort = "minimal"
 
 [stages.summary]
 provider = "openai"
 model = "gpt-5.4"
 temperature = 0.2
-max_completion_tokens = 8000
+max_output_tokens = 8000
 service_tier = "flex"
-reasoning_effort = "medium"
+
+[stages.summary.request.reasoning]
+effort = "medium"
 
 [stages.cornell]
 provider = "openai"
 model = "gpt-5.4"
 temperature = 0.2
-max_completion_tokens = 12000
+max_output_tokens = 12000

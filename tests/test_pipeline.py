@@ -36,8 +36,16 @@ class _FakeCompletions:
 
 
 class _FakeResponse:
-    def __init__(self, content: str) -> None:
+    def __init__(
+        self,
+        content: str,
+        *,
+        status: str | None = None,
+        incomplete_details: object | None = None,
+    ) -> None:
         self.output_text = content
+        self.status = status
+        self.incomplete_details = incomplete_details
 
 
 class _FakeResponses:
@@ -120,13 +128,13 @@ class PipelineTests(unittest.TestCase):
                 name="summary",
                 client=openai_client,
                 model="gpt-test",
-                request_options={"reasoning_effort": "minimal"},
+                request_options={"temperature": 0.1},
             ),
             "cornell": StageConfig(
                 name="cornell",
                 client=openai_client,
                 model="gpt-test",
-                request_options={"reasoning_effort": "medium"},
+                request_options={"temperature": 0.2},
             ),
         }
 
@@ -139,12 +147,12 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(correction_client.chat.completions.calls[0]["model"], "local-model")
         self.assertEqual(openai_client.chat.completions.calls[0]["model"], "gpt-test")
         self.assertEqual(
-            openai_client.chat.completions.calls[0]["reasoning_effort"],
-            "minimal",
+            openai_client.chat.completions.calls[0]["temperature"],
+            0.1,
         )
         self.assertEqual(
-            openai_client.chat.completions.calls[1]["reasoning_effort"],
-            "medium",
+            openai_client.chat.completions.calls[1]["temperature"],
+            0.2,
         )
 
     def test_responses_stage_uses_responses_api_shape(self) -> None:
@@ -155,7 +163,11 @@ class PipelineTests(unittest.TestCase):
                 client=client,
                 model="gpt-test",
                 api="responses",
-                request_options={"max_output_tokens": 100, "store": False},
+                request_options={
+                    "max_output_tokens": 100,
+                    "reasoning": {"effort": "medium"},
+                    "store": False,
+                },
             ),
             "formatting": StageConfig(
                 name="formatting",
@@ -186,7 +198,44 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("instructions", first_call)
         self.assertEqual(first_call["input"], "raw text")
         self.assertEqual(first_call["max_output_tokens"], 100)
+        self.assertEqual(first_call["reasoning"], {"effort": "medium"})
         self.assertFalse(first_call["store"])
+
+    def test_responses_stage_rejects_empty_output_text(self) -> None:
+        client = _FakeClient()
+        client.responses.create = lambda **kwargs: _FakeResponse("")
+        stage_configs = {
+            stage_name: StageConfig(
+                name=stage_name,
+                client=client,
+                model="gpt-test",
+                api="responses",
+            )
+            for stage_name in ("correction", "formatting", "summary", "cornell")
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "empty response"):
+            run_pipeline_with_progress("raw text", stage_configs=stage_configs)
+
+    def test_responses_stage_rejects_incomplete_status(self) -> None:
+        client = _FakeClient()
+        client.responses.create = lambda **kwargs: _FakeResponse(
+            "",
+            status="incomplete",
+            incomplete_details={"reason": "max_output_tokens"},
+        )
+        stage_configs = {
+            stage_name: StageConfig(
+                name=stage_name,
+                client=client,
+                model="gpt-test",
+                api="responses",
+            )
+            for stage_name in ("correction", "formatting", "summary", "cornell")
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "max_output_tokens"):
+            run_pipeline_with_progress("raw text", stage_configs=stage_configs)
 
     def test_mixed_pipeline_can_use_responses_and_chat_completions(self) -> None:
         openai_client = _FakeClient()
