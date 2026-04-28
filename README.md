@@ -126,7 +126,6 @@ model = "qwen-transcriber"
 [stages.summary]
 provider = "openai"
 model = "gpt-5.4-mini"
-temperature = 0.2
 max_output_tokens = 2000
 
 [stages.summary.request.reasoning]
@@ -175,6 +174,37 @@ effort = "medium"
 - `frequency_penalty`
 - `seed`
 - `timeout`
+
+`temperature`처럼 모델별로 지원 여부가 다른 인자는 사용하는 모델이나 호환 서버가 지원할 때만 설정합니다.
+
+OpenAI Responses provider에서 자주 쓰는 옵션 예시:
+
+```toml
+[stages.summary]
+provider = "openai"
+model = "gpt-5.4"
+max_output_tokens = 8000
+service_tier = "flex"
+store = false
+
+[stages.summary.request.reasoning]
+effort = "medium"
+```
+
+OpenAI 호환 Chat Completions provider에서 자주 쓰는 옵션 예시:
+
+```toml
+[stages.cornell]
+provider = "local"
+model = "your-model-name"
+max_completion_tokens = 12000
+temperature = 0.2
+top_p = 0.9
+presence_penalty = 0.1
+frequency_penalty = 0.1
+seed = 42
+timeout = 120
+```
 
 토큰 제한 인자 규칙:
 

@@ -50,6 +50,7 @@ python -m unittest discover -s tests
 - 패키지명은 `lecture_notes`, CLI 명령은 `lecture-notes`를 유지합니다.
 - 출력 Markdown은 Obsidian 친화적으로 헤딩 기반 형식을 유지합니다.
 - 기존 동작을 바꾸는 수정이면 `README.md`와 필요한 경우 `README.en.md`도 함께 업데이트합니다.
+- 작업을 마친 뒤 변경 성격에 맞게 프로젝트 버전을 올립니다. 버전은 `pyproject.toml`과 `lecture_notes/__init__.py`를 함께 갱신합니다.
 - 파일명 한글/공백 지원을 깨지 않도록 `pathlib` 기반 처리를 유지합니다.
 - OpenAI 호환 서버 지원은 `LECTURE_NOTES_BASE_URL`과 `chat.completions.create(...)` 호출 기준을 유지합니다.
 

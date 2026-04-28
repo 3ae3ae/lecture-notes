@@ -126,7 +126,6 @@ model = "qwen-transcriber"
 [stages.summary]
 provider = "openai"
 model = "gpt-5.4-mini"
-temperature = 0.2
 max_output_tokens = 2000
 
 [stages.summary.request.reasoning]
@@ -175,6 +174,37 @@ Common request options:
 - `frequency_penalty`
 - `seed`
 - `timeout`
+
+Only set model-specific options such as `temperature` when the selected model or compatible server supports them.
+
+Common OpenAI Responses provider options:
+
+```toml
+[stages.summary]
+provider = "openai"
+model = "gpt-5.4"
+max_output_tokens = 8000
+service_tier = "flex"
+store = false
+
+[stages.summary.request.reasoning]
+effort = "medium"
+```
+
+Common OpenAI-compatible Chat Completions provider options:
+
+```toml
+[stages.cornell]
+provider = "local"
+model = "your-model-name"
+max_completion_tokens = 12000
+temperature = 0.2
+top_p = 0.9
+presence_penalty = 0.1
+frequency_penalty = 0.1
+seed = 42
+timeout = 120
+```
 
 Token limit rules:
 

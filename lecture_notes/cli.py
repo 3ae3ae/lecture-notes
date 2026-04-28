@@ -34,7 +34,6 @@ api_key_env = "LECTURE_NOTES_API_KEY"
 [stages.correction]
 provider = "openai"
 model = "gpt-5.4-mini"
-temperature = 0.1
 max_output_tokens = 20000
 
 [stages.correction.request.reasoning]
@@ -43,7 +42,6 @@ effort = "medium"
 [stages.formatting]
 provider = "openai"
 model = "gpt-5.4-mini"
-temperature = 0.1
 max_output_tokens = 20000
 
 [stages.formatting.request.reasoning]
@@ -52,7 +50,6 @@ effort = "minimal"
 [stages.summary]
 provider = "openai"
 model = "gpt-5.4"
-temperature = 0.2
 max_output_tokens = 8000
 service_tier = "flex"
 
@@ -62,7 +59,6 @@ effort = "medium"
 [stages.cornell]
 provider = "openai"
 model = "gpt-5.4"
-temperature = 0.2
 max_output_tokens = 12000
 """
 STAGE_NAMES = ("correction", "formatting", "summary", "cornell")
