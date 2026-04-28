@@ -81,9 +81,88 @@ lecture-notes ./lectures
 
 `OPENAI_API_KEY` is also accepted as a fallback for OpenAI usage.
 
+## Config File
+
+Use `lecture-notes.toml` when different stages should use different models or API URLs. By default, the CLI reads `lecture-notes.toml` from the current working directory. Use `--config` to point at another file.
+
+```toml
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.local]
+type = "compatible"
+base_url = "http://localhost:1234/v1"
+api_key_env = "LECTURE_NOTES_API_KEY"
+
+[stages.correction]
+provider = "local"
+model = "qwen-transcriber"
+
+[stages.formatting]
+provider = "local"
+model = "qwen-transcriber"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-5.1-mini"
+temperature = 0.2
+max_completion_tokens = 2000
+reasoning_effort = "minimal"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-5.1"
+reasoning_effort = "medium"
+```
+
+Provider `type` can be:
+
+- `openai`: the official OpenAI API. OpenAI-only request options are allowed.
+- `compatible`: an OpenAI-compatible Chat Completions server. OpenAI-only request options are rejected before any API call.
+
+Common request options:
+
+- `temperature`
+- `top_p`
+- `max_tokens`
+- `max_completion_tokens`
+- `presence_penalty`
+- `frequency_penalty`
+- `seed`
+- `timeout`
+
+OpenAI-only request options:
+
+- `reasoning_effort`
+- `service_tier`
+- `prompt_cache_key`
+- `prompt_cache_retention`
+- `store`
+- `metadata`
+- `safety_identifier`
+
+Profiles can override stage settings under `[profiles.<name>.stages]`.
+
+```toml
+[profiles.fast.stages.summary]
+provider = "openai"
+model = "gpt-5.1-mini"
+reasoning_effort = "minimal"
+```
+
+Run with:
+
+```bash
+lecture-notes ./lectures --profile fast
+lecture-notes ./lectures --config ./my-lecture-notes.toml
+```
+
 ## CLI Options
 
 - `lecture-notes [PATH]`
+- `--config <path>`
+- `--profile <name>`
 - `--model <name>`
 - `--api-key <key>`
 - `--base-url <url>`
@@ -92,6 +171,11 @@ lecture-notes ./lectures
 - `--dry-run`
 - `--verbose`
 - `--fail-fast`
+- `--overwrite`
+- `--limit <n>`
+- `--jobs <n>`
+- `--retries <n>`
+- `--retry-backoff <seconds>`
 
 ## How It Works
 
@@ -126,6 +210,8 @@ Additional behavior:
 - Progress is printed per file even without `--verbose`.
 - `--verbose` adds per-stage pipeline logs.
 - Output is written through a temporary file and renamed into place.
+- `--jobs` processes multiple files concurrently while keeping the 4 stages inside each file sequential.
+- Transient timeout, rate limit, and 5xx errors are retried according to `--retries` and `--retry-backoff`.
 
 ## Output Format
 
@@ -163,7 +249,9 @@ Generated Markdown is Obsidian-friendly and uses headings instead of bracketed l
 - `LECTURE_NOTES_BASE_URL`: base URL for an OpenAI-compatible server
 - `OPENAI_API_KEY`: fallback API key for OpenAI
 
-CLI arguments take precedence over environment variables.
+Config-file providers use `api_key_env` to name the environment variable that contains the API key.
+
+For simple runs without a config file, CLI arguments take precedence over environment variables.
 
 ## Development
 

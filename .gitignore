@@ -1,1 +1,20 @@
+.DS_Store
 .DS_STORE
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+
+# Test/build artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/

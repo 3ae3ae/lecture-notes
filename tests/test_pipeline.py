@@ -4,6 +4,7 @@ import unittest
 
 from lecture_notes.pipeline import (
     ProcessedDocument,
+    StageConfig,
     run_pipeline,
     run_pipeline_with_progress,
 )
@@ -83,4 +84,49 @@ class PipelineTests(unittest.TestCase):
                 (3, "summarizing transcript"),
                 (4, "creating Cornell notes"),
             ],
+        )
+
+    def test_stage_configs_apply_models_and_request_options(self) -> None:
+        correction_client = _FakeClient()
+        openai_client = _FakeClient()
+        stage_configs = {
+            "correction": StageConfig(
+                name="correction",
+                client=correction_client,
+                model="local-model",
+            ),
+            "formatting": StageConfig(
+                name="formatting",
+                client=correction_client,
+                model="local-model",
+            ),
+            "summary": StageConfig(
+                name="summary",
+                client=openai_client,
+                model="gpt-test",
+                request_options={"reasoning_effort": "minimal"},
+            ),
+            "cornell": StageConfig(
+                name="cornell",
+                client=openai_client,
+                model="gpt-test",
+                request_options={"reasoning_effort": "medium"},
+            ),
+        }
+
+        result = run_pipeline_with_progress(
+            "raw text",
+            stage_configs=stage_configs,
+        )
+
+        self.assertEqual(result.summary_text, "stage-1")
+        self.assertEqual(correction_client.chat.completions.calls[0]["model"], "local-model")
+        self.assertEqual(openai_client.chat.completions.calls[0]["model"], "gpt-test")
+        self.assertEqual(
+            openai_client.chat.completions.calls[0]["reasoning_effort"],
+            "minimal",
+        )
+        self.assertEqual(
+            openai_client.chat.completions.calls[1]["reasoning_effort"],
+            "medium",
         )

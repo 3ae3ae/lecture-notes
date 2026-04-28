@@ -86,7 +86,11 @@ class MainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(os.environ, {}, clear=True):
             stdout = io.StringIO()
             stderr = io.StringIO()
-            with redirect_stdout(stdout), redirect_stderr(stderr):
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=Path(tmpdir)),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
                 exit_code = cli.main([tmpdir])
 
             self.assertEqual(exit_code, 2)
@@ -100,7 +104,11 @@ class MainTests(unittest.TestCase):
         ):
             stdout = io.StringIO()
             stderr = io.StringIO()
-            with redirect_stdout(stdout), redirect_stderr(stderr):
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=Path(tmpdir)),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
                 exit_code = cli.main([tmpdir])
 
             self.assertEqual(exit_code, 2)
@@ -144,9 +152,7 @@ class MainTests(unittest.TestCase):
 
             def fake_pipeline(
                 raw_text: str,
-                client: object,
-                model: str,
-                on_stage: object | None = None,
+                **kwargs: object,
             ):
                 if raw_text == "bad":
                     raise RuntimeError("boom")
@@ -161,7 +167,7 @@ class MainTests(unittest.TestCase):
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (
-                mock.patch("lecture_notes.cli._build_client", return_value=object()),
+                mock.patch("lecture_notes.cli._build_client_from_provider", return_value=object()),
                 mock.patch("lecture_notes.cli.run_pipeline_with_progress", side_effect=fake_pipeline),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
@@ -192,7 +198,7 @@ class MainTests(unittest.TestCase):
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (
-                mock.patch("lecture_notes.cli._build_client", return_value=object()),
+                mock.patch("lecture_notes.cli._build_client_from_provider", return_value=object()),
                 mock.patch("lecture_notes.cli.run_pipeline_with_progress", return_value=Result()),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
@@ -224,4 +230,156 @@ class MainTests(unittest.TestCase):
             mock_openai.assert_called_once_with(
                 api_key="compat-key",
                 base_url="https://compat.example/v1",
+            )
+
+    def test_main_rejects_openai_only_option_for_compatible_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"LECTURE_NOTES_API_KEY": "test-key"},
+            clear=True,
+        ):
+            root = Path(tmpdir)
+            (root / "lecture.txt").write_text("raw", encoding="utf-8")
+            config_path = root / "lecture-notes.toml"
+            config_path.write_text(
+                """
+[providers.local]
+type = "compatible"
+base_url = "http://localhost:1234/v1"
+api_key_env = "LECTURE_NOTES_API_KEY"
+
+[stages.correction]
+provider = "local"
+model = "local-model"
+
+[stages.formatting]
+provider = "local"
+model = "local-model"
+
+[stages.summary]
+provider = "local"
+model = "local-model"
+reasoning_effort = "minimal"
+
+[stages.cornell]
+provider = "local"
+model = "local-model"
+""",
+                encoding="utf-8",
+            )
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch("lecture_notes.cli._build_client_from_provider") as build_client,
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                exit_code = cli.main([tmpdir, "--config", str(config_path)])
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("OpenAI-only option", stderr.getvalue())
+            build_client.assert_not_called()
+
+    def test_config_builds_distinct_provider_clients(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "openai-key", "LOCAL_API_KEY": "local-key"},
+            clear=True,
+        ):
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.local]
+type = "compatible"
+base_url = "http://localhost:1234/v1"
+api_key_env = "LOCAL_API_KEY"
+
+[stages.correction]
+provider = "local"
+model = "local-model"
+
+[stages.formatting]
+provider = "local"
+model = "local-model"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+reasoning_effort = "minimal"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path)])
+            _, settings = cli._resolve_pipeline_settings(args)
+            clients = {"openai": object(), "local": object()}
+
+            def fake_build(provider: cli.ProviderConfig) -> object:
+                return clients[provider.name]
+
+            with mock.patch("lecture_notes.cli._build_client_from_provider", side_effect=fake_build):
+                stage_configs = cli._build_stage_configs(settings)
+
+            self.assertIs(stage_configs["correction"].client, clients["local"])
+            self.assertIs(stage_configs["formatting"].client, clients["local"])
+            self.assertIs(stage_configs["summary"].client, clients["openai"])
+            self.assertEqual(
+                stage_configs["summary"].request_options["reasoning_effort"],
+                "minimal",
+            )
+
+    def test_profile_overrides_top_level_stage_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "openai-key"},
+            clear=True,
+        ):
+            config_path = Path(tmpdir, "lecture-notes.toml")
+            config_path.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "full-model"
+
+[stages.formatting]
+provider = "openai"
+model = "full-model"
+
+[stages.summary]
+provider = "openai"
+model = "full-model"
+
+[stages.cornell]
+provider = "openai"
+model = "full-model"
+
+[profiles.fast.stages.summary]
+provider = "openai"
+model = "fast-model"
+reasoning_effort = "minimal"
+""",
+                encoding="utf-8",
+            )
+
+            args = cli.parse_args([tmpdir, "--config", str(config_path), "--profile", "fast"])
+            _, settings = cli._resolve_pipeline_settings(args)
+
+            self.assertEqual(settings.stages["correction"].model, "full-model")
+            self.assertEqual(settings.stages["summary"].model, "fast-model")
+            self.assertEqual(
+                settings.stages["summary"].request_options["reasoning_effort"],
+                "minimal",
             )
