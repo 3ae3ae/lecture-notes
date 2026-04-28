@@ -21,6 +21,44 @@ if TYPE_CHECKING:
 DEFAULT_EXCLUDE_DIRS = {".git", ".venv", "node_modules", "__pycache__"}
 READ_ENCODINGS = ("utf-8", "utf-8-sig", "cp949")
 CONFIG_FILENAME = "lecture-notes.toml"
+GLOBAL_CONFIG_PATH = Path("~/.config/lecture-notes/config.toml")
+DEFAULT_CONFIG_TEMPLATE = """[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.local]
+type = "compatible"
+base_url = "http://localhost:1234/v1"
+api_key_env = "LECTURE_NOTES_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-5.4-mini"
+temperature = 0.1
+reasoning_effort = "medium"
+max_completion_tokens = 20000
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-5.4-mini"
+temperature = 0.1
+reasoning_effort = "minimal"
+max_completion_tokens = 20000
+
+[stages.summary]
+provider = "openai"
+model = "gpt-5.4"
+temperature = 0.2
+max_completion_tokens = 8000
+service_tier = "flex"
+reasoning_effort = "medium"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-5.4"
+temperature = 0.2
+max_completion_tokens = 12000
+"""
 STAGE_NAMES = ("correction", "formatting", "summary", "cornell")
 COMMON_REQUEST_OPTIONS = {
     "temperature",
@@ -105,7 +143,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--config",
-        help=f"Path to a TOML config file. Default: ./{CONFIG_FILENAME} if present.",
+        help=(
+            "Path to a TOML config file. Defaults to local or global config "
+            "when present."
+        ),
+    )
+    parser.add_argument(
+        "--print-config-paths",
+        action="store_true",
+        help="Print checked config paths and exit.",
     )
     parser.add_argument(
         "--profile",
@@ -257,24 +303,65 @@ def _log(message: str, *, verbose: bool = True, stream: object = sys.stdout) -> 
         print(message, file=stream)
 
 
-def _load_config_file(args: argparse.Namespace) -> tuple[Path | None, dict[str, Any]]:
+def _local_config_path() -> Path:
+    return Path.cwd() / CONFIG_FILENAME
+
+
+def _global_config_path() -> Path:
+    return GLOBAL_CONFIG_PATH.expanduser()
+
+
+def _format_config_path(path: Path) -> str:
+    home = Path.home()
+    try:
+        return f"~/{path.relative_to(home)}"
+    except ValueError:
+        return str(path)
+
+
+def _create_default_global_config(config_path: Path) -> None:
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(DEFAULT_CONFIG_TEMPLATE, encoding="utf-8")
+
+
+def _read_config_file(config_path: Path) -> dict[str, Any]:
+    resolved_path = config_path.expanduser().resolve()
+
+    try:
+        with resolved_path.open("rb") as config_file:
+            data = tomllib.load(config_file)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"failed to parse {resolved_path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f"config file must contain a TOML table: {resolved_path}")
+    return data
+
+
+def _load_config_file(
+    args: argparse.Namespace,
+) -> tuple[Path | None, dict[str, Any], bool]:
     if args.config:
         config_path = Path(args.config).expanduser().resolve()
         if not config_path.exists():
             raise ConfigError(f"config file does not exist: {config_path}")
-    else:
-        config_path = Path.cwd() / CONFIG_FILENAME
-        if not config_path.exists():
-            return None, {}
+        return config_path, _read_config_file(config_path), False
+
+    local_path = _local_config_path()
+    if local_path.exists():
+        return local_path, _read_config_file(local_path), False
+
+    global_path = _global_config_path()
+    if global_path.exists():
+        return global_path, _read_config_file(global_path), False
+
+    if args.dry_run:
+        return None, {}, False
 
     try:
-        with config_path.open("rb") as config_file:
-            data = tomllib.load(config_file)
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"failed to parse {config_path}: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ConfigError(f"config file must contain a TOML table: {config_path}")
-    return config_path, data
+        _create_default_global_config(global_path)
+    except OSError:
+        return None, {}, False
+    return global_path, _read_config_file(global_path), True
 
 
 def _expect_table(value: object, context: str) -> dict[str, Any]:
@@ -610,13 +697,15 @@ def _pipeline_settings_from_config(
     return PipelineSettings(providers=providers, stages=stages)
 
 
-def _resolve_pipeline_settings(args: argparse.Namespace) -> tuple[Path | None, PipelineSettings]:
-    config_path, config_data = _load_config_file(args)
+def _resolve_pipeline_settings(
+    args: argparse.Namespace,
+) -> tuple[Path | None, PipelineSettings, bool]:
+    config_path, config_data, created_config = _load_config_file(args)
     if not config_data:
         if args.profile != "default":
             raise ConfigError("--profile requires a config file.")
-        return config_path, _implicit_pipeline_settings(args)
-    return config_path, _pipeline_settings_from_config(config_data, args)
+        return config_path, _implicit_pipeline_settings(args), created_config
+    return config_path, _pipeline_settings_from_config(config_data, args), created_config
 
 
 def _build_stage_configs(settings: PipelineSettings) -> dict[str, StageConfig]:
@@ -710,8 +799,20 @@ def _count_result(
         print(error_message, file=sys.stderr)
 
 
+def _print_config_paths(args: argparse.Namespace) -> None:
+    explicit_path = Path(args.config).expanduser().resolve() if args.config else None
+    if explicit_path is not None:
+        print(f"explicit: {explicit_path}")
+    print(f"local: {_local_config_path()}")
+    print(f"global: {_global_config_path()}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.print_config_paths:
+        _print_config_paths(args)
+        return 0
+
     root = Path(args.path).resolve()
     include_globs = args.include_glob or ["*.txt"]
     exclude_dirs = DEFAULT_EXCLUDE_DIRS | set(args.exclude_dir or [])
@@ -739,11 +840,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     stage_configs: Mapping[str, StageConfig] | None = None
     if not args.dry_run:
         try:
-            config_path, pipeline_settings = _resolve_pipeline_settings(args)
+            config_path, pipeline_settings, created_config = _resolve_pipeline_settings(args)
             stage_configs = _build_stage_configs(pipeline_settings)
         except ConfigError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
+        if created_config and config_path is not None:
+            print(f"created default config -> {_format_config_path(config_path)}")
         if config_path is not None:
             _log(f"using config {config_path}", verbose=args.verbose)
 

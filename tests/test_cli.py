@@ -12,6 +12,28 @@ from unittest import mock
 
 from lecture_notes import cli
 
+DEFAULT_TEST_CONFIG = """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "global-model"
+
+[stages.formatting]
+provider = "openai"
+model = "global-model"
+
+[stages.summary]
+provider = "openai"
+model = "global-model"
+
+[stages.cornell]
+provider = "openai"
+model = "global-model"
+"""
+
 
 class DiscoverTxtFilesTests(unittest.TestCase):
     def test_discover_txt_files_recurses_and_excludes_directories(self) -> None:
@@ -82,7 +104,7 @@ class ReadWriteTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def test_main_requires_model_when_not_dry_run(self) -> None:
+    def test_main_dry_run_does_not_require_model_or_create_global_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(os.environ, {}, clear=True):
             stdout = io.StringIO()
             stderr = io.StringIO()
@@ -91,12 +113,13 @@ class MainTests(unittest.TestCase):
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
-                exit_code = cli.main([tmpdir])
+                exit_code = cli.main([tmpdir, "--dry-run"])
 
-            self.assertEqual(exit_code, 2)
-            self.assertIn("model is required", stderr.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertEqual("", stderr.getvalue())
+            self.assertFalse((Path(tmpdir) / ".config" / "lecture-notes" / "config.toml").exists())
 
-    def test_main_requires_api_key_with_updated_env_message(self) -> None:
+    def test_main_reports_missing_explicit_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
             os.environ,
             {"LECTURE_NOTES_MODEL": "gpt-test"},
@@ -109,10 +132,10 @@ class MainTests(unittest.TestCase):
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
-                exit_code = cli.main([tmpdir])
+                exit_code = cli.main([tmpdir, "--config", str(Path(tmpdir, "missing.toml"))])
 
             self.assertEqual(exit_code, 2)
-            self.assertIn("LECTURE_NOTES_API_KEY", stderr.getvalue())
+            self.assertIn("config file does not exist", stderr.getvalue())
 
     def test_main_dry_run_lists_process_and_skip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -137,6 +160,151 @@ class MainTests(unittest.TestCase):
             self.assertIn("skip", output)
             self.assertIn("processed=1 skipped=1 errors=0", output)
             self.assertEqual("", stderr.getvalue())
+
+    def test_local_config_wins_over_global_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "test-key"},
+            clear=True,
+        ):
+            root = Path(tmpdir)
+            local_config = root / "lecture-notes.toml"
+            global_config = root / ".config" / "lecture-notes" / "config.toml"
+            global_config.parent.mkdir(parents=True)
+            global_config.write_text(DEFAULT_TEST_CONFIG.replace("global-model", "global-only"), encoding="utf-8")
+            local_config.write_text(DEFAULT_TEST_CONFIG.replace("global-model", "local-only"), encoding="utf-8")
+
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=root),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
+            ):
+                config_path, settings, created = cli._resolve_pipeline_settings(cli.parse_args([tmpdir]))
+
+            self.assertEqual(config_path, local_config)
+            self.assertFalse(created)
+            self.assertEqual(settings.stages["summary"].model, "local-only")
+
+    def test_explicit_config_wins_over_local_and_global_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "test-key"},
+            clear=True,
+        ):
+            root = Path(tmpdir)
+            explicit_config = root / "explicit.toml"
+            local_config = root / "lecture-notes.toml"
+            global_config = root / ".config" / "lecture-notes" / "config.toml"
+            global_config.parent.mkdir(parents=True)
+            explicit_config.write_text(DEFAULT_TEST_CONFIG.replace("global-model", "explicit-only"), encoding="utf-8")
+            local_config.write_text(DEFAULT_TEST_CONFIG.replace("global-model", "local-only"), encoding="utf-8")
+            global_config.write_text(DEFAULT_TEST_CONFIG.replace("global-model", "global-only"), encoding="utf-8")
+
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=root),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
+            ):
+                config_path, settings, created = cli._resolve_pipeline_settings(
+                    cli.parse_args([tmpdir, "--config", str(explicit_config)])
+                )
+
+            self.assertEqual(config_path, explicit_config.resolve())
+            self.assertFalse(created)
+            self.assertEqual(settings.stages["summary"].model, "explicit-only")
+
+    def test_global_config_is_loaded_when_local_config_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "test-key"},
+            clear=True,
+        ):
+            root = Path(tmpdir)
+            global_config = root / ".config" / "lecture-notes" / "config.toml"
+            global_config.parent.mkdir(parents=True)
+            global_config.write_text(DEFAULT_TEST_CONFIG, encoding="utf-8")
+
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=root),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
+            ):
+                config_path, settings, created = cli._resolve_pipeline_settings(cli.parse_args([tmpdir]))
+
+            self.assertEqual(config_path, global_config)
+            self.assertFalse(created)
+            self.assertEqual(settings.stages["summary"].model, "global-model")
+
+    def test_global_config_is_auto_created_for_first_non_dry_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "test-key"},
+            clear=True,
+        ):
+            root = Path(tmpdir)
+            txt_path = root / "lecture.txt"
+            txt_path.write_text("raw", encoding="utf-8")
+            global_config = root / ".config" / "lecture-notes" / "config.toml"
+
+            class Result:
+                formatted_transcript = "formatted"
+                summary_text = "summary"
+                cornell_notes_text = "cornell notes"
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=root),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
+                mock.patch("lecture_notes.cli._build_client_from_provider", return_value=object()),
+                mock.patch("lecture_notes.cli.run_pipeline_with_progress", return_value=Result()),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                exit_code = cli.main([tmpdir])
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(global_config.exists())
+            self.assertIn("created default config ->", stdout.getvalue())
+            self.assertEqual("", stderr.getvalue())
+
+    def test_existing_global_config_is_not_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "test-key"},
+            clear=True,
+        ):
+            root = Path(tmpdir)
+            global_config = root / ".config" / "lecture-notes" / "config.toml"
+            global_config.parent.mkdir(parents=True)
+            original_content = DEFAULT_TEST_CONFIG.replace("global-model", "kept-model")
+            global_config.write_text(original_content, encoding="utf-8")
+
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=root),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
+            ):
+                _, settings, created = cli._resolve_pipeline_settings(cli.parse_args([tmpdir]))
+
+            self.assertFalse(created)
+            self.assertEqual(global_config.read_text(encoding="utf-8"), original_content)
+            self.assertEqual(settings.stages["summary"].model, "kept-model")
+
+    def test_print_config_paths_exits_without_discovering_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch("lecture_notes.cli.Path.cwd", return_value=Path(tmpdir)),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
+                mock.patch("lecture_notes.cli.discover_txt_files") as discover,
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                exit_code = cli.main(["--print-config-paths"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("local:", stdout.getvalue())
+            self.assertIn("global:", stdout.getvalue())
+            self.assertEqual("", stderr.getvalue())
+            discover.assert_not_called()
 
     def test_main_continues_after_processing_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, mock.patch.dict(
@@ -166,8 +334,35 @@ class MainTests(unittest.TestCase):
 
             stdout = io.StringIO()
             stderr = io.StringIO()
+            global_config = root / ".config" / "lecture-notes" / "config.toml"
+            global_config.parent.mkdir(parents=True)
+            global_config.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-test"
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-test"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
             with (
                 mock.patch("lecture_notes.cli.Path.cwd", return_value=Path(tmpdir)),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
                 mock.patch("lecture_notes.cli._build_client_from_provider", return_value=object()),
                 mock.patch("lecture_notes.cli.run_pipeline_with_progress", side_effect=fake_pipeline),
                 redirect_stdout(stdout),
@@ -198,8 +393,35 @@ class MainTests(unittest.TestCase):
 
             stdout = io.StringIO()
             stderr = io.StringIO()
+            global_config = root / ".config" / "lecture-notes" / "config.toml"
+            global_config.parent.mkdir(parents=True)
+            global_config.write_text(
+                """
+[providers.openai]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[stages.correction]
+provider = "openai"
+model = "gpt-test"
+
+[stages.formatting]
+provider = "openai"
+model = "gpt-test"
+
+[stages.summary]
+provider = "openai"
+model = "gpt-test"
+
+[stages.cornell]
+provider = "openai"
+model = "gpt-test"
+""",
+                encoding="utf-8",
+            )
             with (
                 mock.patch("lecture_notes.cli.Path.cwd", return_value=Path(tmpdir)),
+                mock.patch.dict(os.environ, {"HOME": tmpdir}, clear=False),
                 mock.patch("lecture_notes.cli._build_client_from_provider", return_value=object()),
                 mock.patch("lecture_notes.cli.run_pipeline_with_progress", return_value=Result()),
                 redirect_stdout(stdout),
@@ -322,7 +544,7 @@ model = "gpt-test"
             )
 
             args = cli.parse_args([tmpdir, "--config", str(config_path)])
-            _, settings = cli._resolve_pipeline_settings(args)
+            _, settings, _ = cli._resolve_pipeline_settings(args)
             clients = {"openai": object(), "local": object()}
 
             def fake_build(provider: cli.ProviderConfig) -> object:
@@ -379,7 +601,7 @@ reasoning_effort = "minimal"
             )
 
             args = cli.parse_args([tmpdir, "--config", str(config_path), "--profile", "fast"])
-            _, settings = cli._resolve_pipeline_settings(args)
+            _, settings, _ = cli._resolve_pipeline_settings(args)
 
             self.assertEqual(settings.stages["correction"].model, "full-model")
             self.assertEqual(settings.stages["summary"].model, "fast-model")
@@ -428,7 +650,7 @@ max_completion_tokens = 50
             )
 
             args = cli.parse_args([tmpdir, "--config", str(config_path)])
-            _, settings = cli._resolve_pipeline_settings(args)
+            _, settings, _ = cli._resolve_pipeline_settings(args)
 
             self.assertEqual(settings.providers["openai"].api, "responses")
             self.assertEqual(settings.providers["local"].type, "compatible")

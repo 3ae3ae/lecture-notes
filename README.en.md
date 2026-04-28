@@ -83,7 +83,19 @@ lecture-notes ./lectures
 
 ## Config File
 
-Use `lecture-notes.toml` when different stages should use different models or API URLs. By default, the CLI reads `lecture-notes.toml` from the current working directory. Use `--config` to point at another file.
+Use `lecture-notes.toml` when different stages should use different models or API URLs. Config files are checked in this order:
+
+1. The file passed with `--config`
+2. `lecture-notes.toml` in the current working directory
+3. The user-level config at `~/.config/lecture-notes/config.toml`
+
+If neither local nor global config exists and the command is not a dry run, the CLI creates the global default config on first use. This makes `uv tool install` usage work without manually copying a config file.
+
+Inspect paths:
+
+```bash
+lecture-notes --print-config-paths
+```
 
 ```toml
 [providers.openai]
@@ -173,6 +185,7 @@ lecture-notes ./lectures --config ./my-lecture-notes.toml
 
 - `lecture-notes [PATH]`
 - `--config <path>`
+- `--print-config-paths`
 - `--profile <name>`
 - `--model <name>`
 - `--api-key <key>`
@@ -263,6 +276,8 @@ Generated Markdown is Obsidian-friendly and uses headings instead of bracketed l
 Config-file providers use `api_key_env` to name the environment variable that contains the API key.
 
 For simple runs without a config file, CLI arguments take precedence over environment variables.
+
+When installed with `uv tool`, the global config still lives at `~/.config/lecture-notes/config.toml`. Put `lecture-notes.toml` in a lecture folder when that folder needs settings that override the global config.
 
 ## Development
 

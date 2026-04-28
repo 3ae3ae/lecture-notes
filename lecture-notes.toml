@@ -30,7 +30,7 @@ service_tier = "flex"
 reasoning_effort = "medium"
 
 [stages.cornell]
-provider = "local"
-model = "supergemma4-26b-uncensored-mlx-v2"
+provider = "openai"
+model = "gpt-5.4"
 temperature = 0.2
 max_completion_tokens = 12000
