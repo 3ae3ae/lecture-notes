@@ -9,7 +9,7 @@ It is designed for cases where you already have raw transcript text and want:
 - corrected transcript text
 - readable paragraph formatting
 - a compact summary for review
-- detailed Cornell note-taking style notes
+- detailed Markdown table-based Cornell note-taking style notes
 - Obsidian-friendly Markdown output
 
 The CLI uses OpenAI's Python SDK. Official OpenAI providers use the Responses API by default, while OpenAI-compatible providers use the Chat Completions API.
@@ -270,7 +270,7 @@ For each `*.txt` file under the target directory:
 1. Correct transcription mistakes while preserving meaning.
 2. Reformat the transcript into readable paragraphs.
 3. Generate a compact summary focused on review-worthy points.
-4. Generate detailed Cornell note-taking style notes that can stand in for reading the full transcript.
+4. Generate detailed Markdown table-based Cornell note-taking style notes that can stand in for reading the full transcript.
 
 The tool then writes a sibling Markdown file with the same basename:
 
@@ -314,14 +314,15 @@ Generated Markdown is Obsidian-friendly and uses headings instead of bracketed l
 
 ## 코넬 노트
 
-### 단서 / 질문
-- ...
+### 코넬 노트
 
-### 필기
-- ...
+| 단서 / 질문 | 필기 |
+|---|---|
+| ... | ... |
 
-### 요약
-- ...
+| 요약 |
+|---|
+| ... |
 
 ## 전체 전사문
 
