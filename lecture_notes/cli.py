@@ -5,6 +5,10 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import fnmatch
+import math
+import json
+import re
+import unicodedata
 import os
 import sys
 import tempfile
@@ -14,6 +18,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from lecture_notes.pipeline import RetryConfig, StageConfig, run_pipeline_with_progress
+from lecture_notes.transcription import AUDIO_SUFFIXES
+from lecture_notes.audio import cached_transcription, compress_audio, transcript_cache_path
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -33,7 +39,7 @@ api_key_env = "LECTURE_NOTES_API_KEY"
 
 [stages.correction]
 provider = "openai"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-luna"
 max_output_tokens = 20000
 
 [stages.correction.request.reasoning]
@@ -41,15 +47,15 @@ effort = "medium"
 
 [stages.formatting]
 provider = "openai"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-luna"
 max_output_tokens = 20000
 
 [stages.formatting.request.reasoning]
-effort = "minimal"
+effort = "low"
 
 [stages.summary]
 provider = "openai"
-model = "gpt-5.4"
+model = "gpt-5.6-terra"
 max_output_tokens = 8000
 service_tier = "flex"
 
@@ -58,7 +64,7 @@ effort = "medium"
 
 [stages.cornell]
 provider = "openai"
-model = "gpt-5.4"
+model = "gpt-5.6-terra"
 max_output_tokens = 12000
 """
 STAGE_NAMES = ("correction", "formatting", "summary", "cornell")
@@ -117,13 +123,13 @@ class PipelineSettings:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="lecture-notes",
-        description="Process lecture transcript txt files into markdown summaries.",
+        description="Turn lecture recordings and transcripts into speaker-aware Markdown notes.",
     )
     parser.add_argument(
         "path",
         nargs="?",
         default=".",
-        help="Root directory to recursively search for transcript txt files.",
+        help="Recording, transcript, or directory to search recursively.",
     )
     parser.add_argument(
         "--model",
@@ -167,7 +173,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--include-glob",
         action="append",
         default=None,
-        help="Glob pattern for files to include. Repeatable. Default: *.txt",
+        help="Glob pattern for files to include. Repeatable. Default: txt and supported audio/video files.",
     )
     parser.add_argument(
         "--exclude-dir",
@@ -193,12 +199,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="Reprocess txt files even when matching md files already exist.",
+        help="Reprocess files even when matching md files already exist.",
     )
     parser.add_argument(
         "--limit",
         type=int,
-        help="Process at most N matching txt files after discovery.",
+        help="Process at most N matching files after discovery.",
     )
     parser.add_argument(
         "--jobs",
@@ -218,6 +224,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=1.0,
         help="Initial retry backoff in seconds. Default: 1.0.",
     )
+    parser.add_argument("--asr-model", default="large-v3", help="whispermlx model. Default: large-v3.")
+    parser.add_argument("--language", default="ko", help="Audio language: ko (default), en, or auto.")
+    parser.add_argument("--name-from-content", action="store_true",
+                        help="Name new notes using the source filename and generated lecture title.")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--transcribe-only", action="store_true", help="Save speaker transcripts without generating notes.")
+    modes.add_argument("--compress-audio", action="store_true", help="Only compress M4A files in place to mono AAC 64 kbps.")
     return parser.parse_args(argv)
 
 
@@ -233,20 +246,79 @@ def discover_txt_files(
     for current_root, dirs, files in os.walk(root):
         dirs[:] = sorted(directory for directory in dirs if directory not in excluded)
         for filename in sorted(files):
-            if any(fnmatch.fnmatch(filename, pattern) for pattern in include_patterns):
+            if any(fnmatch.fnmatch(filename.lower(), pattern.lower()) for pattern in include_patterns):
                 found.append(Path(current_root, filename))
     return found
 
 
+def select_inputs(paths: list[Path]) -> list[Path]:
+    """Prefer audio over a legacy txt with the same output basename."""
+    audio_stems = {path.with_suffix("") for path in paths if path.suffix.lower() in AUDIO_SUFFIXES}
+    return [path for path in paths
+            if path.suffix.lower() != ".txt" or path.with_suffix("") not in audio_stems]
+
+
+def _compress_files(paths: list[Path], args: argparse.Namespace) -> int:
+    errors = 0
+    for index, path in enumerate(paths, 1):
+        try:
+            status = "would-compress to mono AAC 64 kbps" if args.dry_run else compress_audio(path)
+            print(f"[{index}/{len(paths)}] {path}: {status}")
+        except Exception as exc:
+            print(f"error: {path}: {exc}", file=sys.stderr)
+            errors += 1
+            if args.fail_fast:
+                break
+    return 1 if errors else 0
+
+
+def _source_marker(path: Path) -> str:
+    return "<!-- lecture-notes-source: " + json.dumps(path.name, ensure_ascii=True) + " -->"
+
+
+def existing_output(path: Path) -> Path | None:
+    original = path.with_suffix(".md")
+    if original.exists():
+        return original
+    # ponytail: scan note headers per source; index them once if large folders become slow.
+    matches = []
+    for candidate in sorted(path.parent.glob("*.md")):
+        try:
+            with candidate.open(encoding="utf-8") as file:
+                markers = {_source_marker(path)}
+                if path.suffix.lower() in AUDIO_SUFFIXES:
+                    markers.add(_source_marker(path.with_suffix(".txt")))
+                if file.readline().rstrip() in markers:
+                    matches.append(candidate)
+        except (OSError, UnicodeError):
+            continue
+    if len(matches) > 1:
+        raise ValueError(f"multiple notes for {path}; keep one output before rerunning")
+    return matches[0] if matches else None
+
+
 def should_skip(txt_path: Path) -> bool:
-    return txt_path.with_suffix(".md").exists()
+    return existing_output(txt_path) is not None
+
+
+def content_output_path(source: Path, title: str) -> Path:
+    def clean(value: str, byte_limit: int) -> str:
+        value = unicodedata.normalize("NFC", value)
+        value = re.sub(r'[<>:"/\\|?*#\[\]\x00-\x1f\x7f]', " ", value)
+        value = " ".join(value.split()).strip(" .")
+        return value.encode("utf-8")[:byte_limit].decode("utf-8", errors="ignore").rstrip(" .")
+    topic = clean(title, 120)
+    if not topic:
+        return source.with_suffix(".md")
+    stem = clean(source.stem, 100) or "lecture"
+    return source.with_name(f"{stem} - {topic}.md")
 
 
 def read_text_file(path: Path) -> str:
     last_error: UnicodeDecodeError | None = None
     for encoding in READ_ENCODINGS:
         try:
-            return path.read_text(encoding=encoding)
+            return path.read_text(encoding=encoding).removeprefix("\ufeff")
         except UnicodeDecodeError as exc:
             last_error = exc
     if last_error is not None:
@@ -280,6 +352,10 @@ def write_markdown(
     summary_text: str,
     cornell_notes_text: str,
     transcript_text: str,
+    *,
+    title: str = "",
+    source: Path | None = None,
+    overwrite: bool = True,
 ) -> None:
     normalized_summary = normalize_summary_text(summary_text)
     content = (
@@ -287,20 +363,31 @@ def write_markdown(
         f"## 코넬 노트\n\n{cornell_notes_text.strip()}\n\n"
         f"## 전체 전사문\n\n{transcript_text.strip()}\n"
     )
+    if title:
+        content = f"# {title}\n\n" + content
+    if source is not None:
+        content = _source_marker(source) + "\n\n" + content
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        dir=output_path.parent,
-        prefix=f".{output_path.stem}.",
-        suffix=".tmp",
-        delete=False,
-    ) as temp_file:
-        temp_file.write(content)
-        temp_path = Path(temp_file.name)
-
-    temp_path.replace(output_path)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=output_path.parent,
+            prefix=f".{output_path.stem}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(content)
+        if overwrite:
+            temp_path.replace(output_path)
+        else:
+            os.link(temp_path, output_path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 def _log(message: str, *, verbose: bool = True, stream: object = sys.stdout) -> None:
@@ -335,8 +422,8 @@ def _read_config_file(config_path: Path) -> dict[str, Any]:
     try:
         with resolved_path.open("rb") as config_file:
             data = tomllib.load(config_file)
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"failed to parse {resolved_path}: {exc}") from exc
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raise ConfigError(f"failed to read or parse {resolved_path}: {exc}") from exc
     if not isinstance(data, dict):
         raise ConfigError(f"config file must contain a TOML table: {resolved_path}")
     return data
@@ -778,15 +865,29 @@ def _process_file(
     output_path = txt_path.with_suffix(".md")
     progress_prefix = _format_progress(index, total_files, txt_path)
 
-    if not args.overwrite and should_skip(txt_path):
-        return "skipped", f"{progress_prefix} skip existing -> {output_path}", None
-
     try:
+        previous_output = None if args.transcribe_only else existing_output(txt_path)
+        if previous_output is not None:
+            output_path = previous_output
+            if not args.overwrite:
+                return "skipped", f"{progress_prefix} skip existing -> {output_path}", None
         print(f"{progress_prefix} reading")
-        raw_text = read_text_file(txt_path)
+        if txt_path.suffix.lower() in AUDIO_SUFFIXES:
+            if args.dry_run:
+                target = transcript_cache_path(txt_path) if args.transcribe_only else output_path
+                return "processed", f"{progress_prefix} would-transcribe -> {target}", None
+            raw_text = cached_transcription(
+                txt_path, model=args.asr_model,
+                language=None if args.language == "auto" else args.language,
+                on_stage=lambda stage: print(f"{progress_prefix} {stage}"),
+            )
+        else:
+            raw_text = read_text_file(txt_path)
         if not raw_text.strip():
             return "skipped", f"{progress_prefix} skip empty", None
 
+        if args.transcribe_only:
+            return "processed", f"{progress_prefix} transcribed -> {transcript_cache_path(txt_path)}", None
         if args.dry_run:
             return "processed", f"{progress_prefix} would-process -> {output_path}", None
 
@@ -801,12 +902,18 @@ def _process_file(
                 )
             ),
         )
+        title = getattr(result, "title", "")
+        if args.name_from_content and previous_output is None:
+            output_path = content_output_path(txt_path, title)
         _log(f"{progress_prefix} writing markdown", verbose=args.verbose)
         write_markdown(
             output_path,
             summary_text=result.summary_text,
             cornell_notes_text=result.cornell_notes_text,
             transcript_text=result.formatted_transcript,
+            title=title,
+            source=txt_path,
+            overwrite=args.overwrite and previous_output == output_path,
         )
         return "processed", f"{progress_prefix} processed -> {output_path}", None
     except Exception as exc:  # pragma: no cover - exercised by CLI tests
@@ -844,15 +951,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_config_paths(args)
         return 0
 
-    root = Path(args.path).resolve()
-    include_globs = args.include_glob or ["*.txt"]
+    root = Path(args.path).expanduser().resolve()
+    include_globs = args.include_glob or ["*.txt", *(f"*{suffix}" for suffix in sorted(AUDIO_SUFFIXES))]
     exclude_dirs = DEFAULT_EXCLUDE_DIRS | set(args.exclude_dir or [])
 
     if not root.exists():
         print(f"error: path does not exist: {root}", file=sys.stderr)
-        return 2
-    if not root.is_dir():
-        print(f"error: path is not a directory: {root}", file=sys.stderr)
         return 2
 
     if args.limit is not None and args.limit < 0:
@@ -864,26 +968,63 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.retries < 0:
         print("error: --retries must be >= 0.", file=sys.stderr)
         return 2
-    if args.retry_backoff < 0:
-        print("error: --retry-backoff must be >= 0.", file=sys.stderr)
+    if not math.isfinite(args.retry_backoff) or args.retry_backoff < 0:
+        print("error: --retry-backoff must be finite and >= 0.", file=sys.stderr)
         return 2
 
-    stage_configs: Mapping[str, StageConfig] | None = None
-    try:
-        config_path, pipeline_settings, created_config = _resolve_pipeline_settings(args)
-        if not args.dry_run:
-            stage_configs = _build_stage_configs(pipeline_settings)
-    except ConfigError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    txt_files = discover_txt_files(root, include_globs, exclude_dirs) if root.is_dir() else [root]
+    if args.compress_audio or args.transcribe_only:
+        allowed = {".m4a"} if args.compress_audio else AUDIO_SUFFIXES
+        if root.is_file() and root.suffix.lower() not in allowed:
+            print(f"error: unsupported input for this mode: {root}", file=sys.stderr)
+            return 2
+        txt_files = [path for path in txt_files if path.suffix.lower() in allowed]
+    unsupported = [path for path in txt_files if path.suffix.lower() not in AUDIO_SUFFIXES | {".txt"}]
+    if unsupported:
+        print(f"error: unsupported input: {unsupported[0]}", file=sys.stderr)
         return 2
-    if created_config and config_path is not None:
-        print(f"created default config -> {_format_config_path(config_path)}")
-    if config_path is not None:
-        _log(f"using config {config_path}", verbose=args.verbose)
-
-    txt_files = discover_txt_files(root, include_globs, exclude_dirs)
+    txt_files = select_inputs(txt_files)
     if args.limit is not None:
         txt_files = txt_files[: args.limit]
+    if args.compress_audio:
+        return _compress_files(txt_files, args)
+
+    stage_configs: Mapping[str, StageConfig] | None = None
+    if not args.transcribe_only:
+        try:
+            config_path, pipeline_settings, created_config = _resolve_pipeline_settings(args)
+        except ConfigError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if created_config and config_path is not None:
+            print(f"created default config -> {_format_config_path(config_path)}")
+        if config_path is not None:
+            _log(f"using config {config_path}", verbose=args.verbose)
+
+    outputs: dict[Path, Path] = {}
+    try:
+        for path in txt_files:
+            if not args.transcribe_only and not args.overwrite and should_skip(path):
+                continue
+            output = transcript_cache_path(path) if args.transcribe_only else path.with_suffix(".md")
+            if output in outputs:
+                print(f"error: output collision: {outputs[output]} and {path}; select one with --include-glob.", file=sys.stderr)
+                return 2
+            outputs[output] = path
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if not args.dry_run and not args.transcribe_only and outputs:
+        try:
+            stage_configs = _build_stage_configs(pipeline_settings)
+        except ConfigError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
+    # ponytail: serialize audio batches; use a dedicated ASR worker if overlap becomes necessary.
+    if any(path.suffix.lower() in AUDIO_SUFFIXES for path in txt_files) and args.jobs > 1:
+        print("audio inputs detected; processing sequentially to bound model memory")
+        args.jobs = 1
 
     counts = {"processed": 0, "skipped": 0, "errors": 0}
     retry_config = RetryConfig(
@@ -892,7 +1033,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     print(f"searching {root}")
-    print(f"found {len(txt_files)} matching txt file(s)")
+    print(f"found {len(txt_files)} matching file(s)")
 
     total_files = len(txt_files)
     file_jobs = [

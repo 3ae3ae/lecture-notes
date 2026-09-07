@@ -9,7 +9,7 @@ api_key_env = "LECTURE_NOTES_API_KEY"
 
 [stages.correction]
 provider = "openai"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-luna"
 max_output_tokens = 20000
 
 [stages.correction.request.reasoning]
@@ -17,7 +17,7 @@ effort = "medium"
 
 [stages.formatting]
 provider = "openai"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-luna"
 max_output_tokens = 20000
 
 [stages.formatting.request.reasoning]
@@ -25,7 +25,7 @@ effort = "low"
 
 [stages.summary]
 provider = "openai"
-model = "gpt-5.4"
+model = "gpt-5.6-terra"
 max_output_tokens = 8000
 service_tier = "flex"
 
@@ -34,5 +34,5 @@ effort = "medium"
 
 [stages.cornell]
 provider = "openai"
-model = "gpt-5.4"
+model = "gpt-5.6-terra"
 max_output_tokens = 12000

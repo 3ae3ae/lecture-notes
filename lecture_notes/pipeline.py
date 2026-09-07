@@ -23,6 +23,7 @@ class ProcessedDocument:
     formatted_transcript: str
     summary_text: str
     cornell_notes_text: str
+    title: str = ""
 
 
 @dataclass(slots=True)
@@ -77,6 +78,8 @@ class ChatCompletionsModelClient:
             choice = choices[0]
         except (IndexError, TypeError) as exc:
             raise RuntimeError("OpenAI returned no chat completion choices.") from exc
+        if getattr(choice, "finish_reason", None) in {"length", "content_filter"}:
+            raise RuntimeError("OpenAI returned an incomplete chat completion.")
         message = getattr(choice, "message", None)
         if message is None:
             raise RuntimeError("OpenAI returned a chat completion without a message.")
@@ -122,11 +125,11 @@ class ResponsesModelClient:
 
 def _is_retryable_error(exc: Exception) -> bool:
     status_code = getattr(exc, "status_code", None)
-    if status_code == 429 or (isinstance(status_code, int) and status_code >= 500):
+    if isinstance(status_code, int):
+        return status_code in {408, 429} or 500 <= status_code < 600
+    if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
-
-    name = type(exc).__name__.lower()
-    return "timeout" in name or "rate" in name or "connection" in name
+    return type(exc).__name__ in {"APITimeoutError", "APIConnectionError", "RateLimitError"}
 
 
 def _model_client_for_stage(
@@ -167,6 +170,13 @@ def _call_model(
             time.sleep(backoff_seconds * (2 ** (attempt_number - 1)))
 
     raise RuntimeError("OpenAI returned an empty response.")
+
+
+def _split_title(text: str) -> tuple[str, str]:
+    first_line, separator, body = text.strip().partition("\n")
+    if first_line.startswith("# ") and separator and body.strip():
+        return first_line[2:].strip().strip("# "), body.strip()
+    return "", text
 
 
 def run_pipeline(raw_text: str, client: "OpenAI", model: str) -> ProcessedDocument:
@@ -230,6 +240,8 @@ def run_pipeline_with_progress(
         retry_config=retry_config,
     )
 
+    title, summary_text = _split_title(summary_text)
+
     cornell_config = stage_configs["cornell"]
     stage_number, stage_name, system_prompt = _STAGE_DETAILS["cornell"]
     if on_stage is not None:
@@ -240,7 +252,9 @@ def run_pipeline_with_progress(
         user_text=formatted_transcript,
         retry_config=retry_config,
     )
+    _, cornell_notes_text = _split_title(cornell_notes_text)
     return ProcessedDocument(
+        title=title,
         corrected_text=corrected_text,
         formatted_transcript=formatted_transcript,
         summary_text=summary_text,

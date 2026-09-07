@@ -170,7 +170,7 @@ class MainTests(unittest.TestCase):
             output = stdout.getvalue()
             self.assertEqual(exit_code, 0)
             self.assertIn("searching", output)
-            self.assertIn("found 2 matching txt file(s)", output)
+            self.assertIn("found 2 matching file(s)", output)
             self.assertIn("[1/2]", output)
             self.assertIn("would-process", output)
             self.assertIn("skip", output)
@@ -1001,3 +1001,148 @@ model = "gpt-test"
                 cli._resolve_pipeline_settings(args)
 
             self.assertIn("max_completion_tokens", str(error.exception))
+
+
+class AudioInputTests(unittest.TestCase):
+    def test_audio_dry_run_does_not_load_models_and_accepts_single_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio = Path(tmpdir, "한글 강의.M4A")
+            audio.touch()
+            with mock.patch.object(cli, "_resolve_pipeline_settings", return_value=(None, None, False)), \
+                 mock.patch.object(cli, "cached_transcription") as transcribe, redirect_stdout(io.StringIO()):
+                self.assertEqual(cli.main([str(audio), "--dry-run"]), 0)
+                transcribe.assert_not_called()
+
+    def test_colliding_inputs_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "강의.wav").touch()
+            Path(tmpdir, "강의.mp3").touch()
+            with mock.patch.object(cli, "_resolve_pipeline_settings", return_value=(None, None, False)), \
+                 redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(cli.main([tmpdir, "--dry-run"]), 2)
+                self.assertIn("output collision", stderr.getvalue())
+
+    def test_audio_flows_into_notes(self):
+        from lecture_notes.pipeline import ProcessedDocument, RetryConfig
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir, "한글 강의.wav")
+            path.touch()
+            with mock.patch.object(cli, "cached_transcription", return_value="[0.00s] [SPEAKER_00] 수업") as asr, \
+                 mock.patch.object(cli, "run_pipeline_with_progress", return_value=ProcessedDocument("교정", "전사", "요약", "필기")) as pipeline, \
+                 redirect_stdout(io.StringIO()):
+                result = cli._process_file(index=1, total_files=1, txt_path=path,
+                    args=cli.parse_args([]), stage_configs={}, retry_config=RetryConfig())
+            self.assertEqual(result[0], "processed")
+            self.assertEqual(pipeline.call_args.args[0], "[0.00s] [SPEAKER_00] 수업")
+            self.assertIn("전사", path.with_suffix(".md").read_text())
+            self.assertEqual(asr.call_count, 1)
+
+    def test_utf8_bom_is_removed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir, "강의.txt")
+            path.write_text("강의", encoding="utf-8-sig")
+            self.assertEqual(cli.read_text_file(path), "강의")
+
+
+class ReliabilityTests(unittest.TestCase):
+    def test_save_failure_preserves_original_and_removes_temp_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir, "강의.md")
+            output.write_text("original", encoding="utf-8")
+            with mock.patch.object(Path, "replace", side_effect=OSError("disk error")):
+                with self.assertRaisesRegex(OSError, "disk error"):
+                    cli.write_markdown(output, "summary", "notes", "transcript")
+            self.assertEqual(output.read_text(), "original")
+            self.assertEqual(list(Path(tmpdir).iterdir()), [output])
+
+    def test_unreadable_config_reports_cli_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(cli.main([tmpdir, "--config", tmpdir]), 2)
+            self.assertIn("failed to read or parse", stderr.getvalue())
+
+    def test_nonfinite_backoff_rejected_before_config_or_api(self):
+        for value in ("nan", "inf", "-inf"):
+            with self.subTest(value=value), \
+                 mock.patch.object(cli, "_resolve_pipeline_settings") as config, \
+                 redirect_stderr(io.StringIO()):
+                self.assertEqual(cli.main([f"--retry-backoff={value}"]), 2)
+                config.assert_not_called()
+
+    def test_empty_completed_and_zero_limit_batches_need_no_api_key(self):
+        for scenario in ("empty", "completed", "zero-limit"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                if scenario != "empty":
+                    (root / "lecture.txt").write_text("text")
+                if scenario == "completed":
+                    (root / "lecture.md").write_text("existing notes")
+                    (root / "lecture.mp3").touch()
+                config = root / "settings.toml"
+                config.write_text(DEFAULT_TEST_CONFIG)
+                args = [tmpdir, "--config", str(config)]
+                if scenario == "zero-limit":
+                    args.extend(["--limit", "0"])
+                with mock.patch.dict(os.environ, {}, clear=True), \
+                     mock.patch.object(cli, "_build_stage_configs") as build, \
+                     redirect_stdout(io.StringIO()):
+                    self.assertEqual(cli.main(args), 0)
+                    build.assert_not_called()
+
+    def test_collision_is_reported_before_api_credentials(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "lecture.mp3").touch()
+            (root / "lecture.wav").touch()
+            with mock.patch.object(cli, "_resolve_pipeline_settings", return_value=(None, None, False)), \
+                 mock.patch.object(cli, "_build_stage_configs") as build, \
+                 redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(cli.main([tmpdir]), 2)
+                self.assertIn("output collision", stderr.getvalue())
+                build.assert_not_called()
+
+
+class ContentNamingTests(unittest.TestCase):
+    def test_title_is_safe_and_fits_utf8_filename_limit(self):
+        source = Path("/tmp/" + "원본" * 50 + ".txt")
+        path = cli.content_output_path(source, '../위험: [개념] / 비교?' + '한글' * 100)
+        self.assertEqual(path.parent, source.parent)
+        self.assertLessEqual(len(path.name.encode("utf-8")), 255)
+        for char in '<>:"/\\|?*#[]':
+            self.assertNotIn(char, path.name)
+        self.assertEqual(cli.content_output_path(source, '...'), source.with_suffix('.md'))
+
+    def test_generated_name_is_found_on_rerun_and_kept_on_overwrite(self):
+        from lecture_notes.pipeline import ProcessedDocument, RetryConfig
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir, "녹음 01.txt")
+            source.write_text("text")
+            result = ProcessedDocument("corrected", "formatted", "summary", "notes", "상관관계와 인과관계")
+            args = cli.parse_args(["--name-from-content"])
+            with mock.patch.object(cli, "run_pipeline_with_progress", return_value=result) as pipeline, \
+                 redirect_stdout(io.StringIO()):
+                kwargs = dict(index=1, total_files=1, txt_path=source, args=args,
+                              stage_configs={}, retry_config=RetryConfig())
+                self.assertEqual(cli._process_file(**kwargs)[0], "processed")
+                output = cli.existing_output(source)
+                self.assertEqual(output.name, "녹음 01 - 상관관계와 인과관계.md")
+                self.assertEqual(cli._process_file(**kwargs)[0], "skipped")
+                self.assertEqual(pipeline.call_count, 1)
+                args.overwrite = True
+                result.title = "새 제목"
+                self.assertEqual(cli._process_file(**kwargs)[0], "processed")
+                self.assertEqual(list(Path(tmpdir).glob("*.md")), [output])
+                self.assertIn("# 새 제목", output.read_text())
+
+    def test_generated_name_never_overwrites_unrelated_note(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir, "existing.md")
+            output.write_text("keep me")
+            with self.assertRaises(FileExistsError):
+                cli.write_markdown(output, "summary", "notes", "text", overwrite=False)
+            self.assertEqual(output.read_text(), "keep me")
+            self.assertEqual(list(Path(tmpdir).iterdir()), [output])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -310,3 +310,68 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(openai_client.responses.calls), 3)
         self.assertEqual(len(local_client.chat.completions.calls), 1)
         self.assertEqual(result.cornell_notes_text, "stage-1")
+
+
+class TruncationTests(unittest.TestCase):
+    def test_chat_truncation_stops_pipeline(self):
+        from unittest import mock
+        client = _FakeClient()
+        completion = _FakeCompletion("partial")
+        completion.choices[0].finish_reason = "length"
+        with mock.patch.object(client.chat.completions, "create", return_value=completion) as create:
+            with self.assertRaisesRegex(RuntimeError, "incomplete"):
+                run_pipeline("raw", client, "test")
+            self.assertEqual(create.call_count, 1)
+
+
+class RetryTests(unittest.TestCase):
+    def test_transient_failure_retries_only_failed_stage(self):
+        from unittest import mock
+        from lecture_notes.pipeline import RetryConfig
+        client = _FakeClient()
+        error = RuntimeError("unavailable")
+        error.status_code = 503
+        responses = [error, *(_FakeCompletion(f"stage-{i}") for i in range(1, 5))]
+        with mock.patch.object(client.chat.completions, "create", side_effect=responses) as create, \
+             mock.patch("lecture_notes.pipeline.time.sleep") as sleep:
+            result = run_pipeline_with_progress("raw", client, "test", retry_config=RetryConfig(2, 0.5))
+        self.assertEqual(create.call_count, 5)
+        self.assertEqual(result.cornell_notes_text, "stage-4")
+        sleep.assert_called_once_with(0.5)
+
+    def test_unrelated_error_is_not_retried(self):
+        from unittest import mock
+        from lecture_notes.pipeline import RetryConfig
+        class GenerateError(Exception):
+            pass
+        client = _FakeClient()
+        with mock.patch.object(client.chat.completions, "create", side_effect=GenerateError) as create:
+            with self.assertRaises(GenerateError):
+                run_pipeline_with_progress("raw", client, "test", retry_config=RetryConfig(2, 0))
+        self.assertEqual(create.call_count, 1)
+
+    def test_retry_status_codes_and_builtin_connection_errors(self):
+        from lecture_notes.pipeline import _is_retryable_error
+        for code in (400, 401, 403, 408, 429, 500, 503):
+            error = RuntimeError("http error")
+            error.status_code = code
+            self.assertEqual(_is_retryable_error(error), code in (408, 429, 500, 503))
+        self.assertTrue(_is_retryable_error(ConnectionResetError()))
+        self.assertTrue(_is_retryable_error(TimeoutError()))
+
+
+class SummaryTitleTests(unittest.TestCase):
+    def test_summary_title_is_extracted_without_extra_api_call(self):
+        from unittest import mock
+        client = _FakeClient()
+        outputs = ["corrected", "formatted", "# 상관관계와 인과관계\n\n### 핵심 요약\n- 내용", "# 중복 제목\n\n| 단서 / 질문 | 필기 |"]
+        with mock.patch.object(client.chat.completions, "create", side_effect=[_FakeCompletion(x) for x in outputs]) as create:
+            result = run_pipeline("raw", client, "test")
+        self.assertEqual(result.title, "상관관계와 인과관계")
+        self.assertTrue(result.cornell_notes_text.startswith("| 단서 / 질문"))
+        self.assertTrue(result.summary_text.startswith("### 핵심 요약"))
+        self.assertEqual(create.call_count, 4)
+
+
+if __name__ == "__main__":
+    unittest.main()

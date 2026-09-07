@@ -4,14 +4,14 @@
 
 ## 프로젝트 개요
 
-`lecture-notes`는 강의 전사 `*.txt` 파일을 찾아 다음 4단계 AI 파이프라인으로 처리하는 Python CLI입니다.
+`lecture-notes`는 녹음·영상과 강의 전사 `*.txt`를 찾아 처리하는 Python CLI입니다. 녹음은 whispermlx로 화자 전사한 뒤 다음 4단계 AI 파이프라인으로 처리합니다. 같은 basename의 녹음과 TXT는 녹음을 우선합니다.
 
 1. 전사 오류 교정
 2. 전사문 서식화
 3. 핵심 요약 생성
 4. 코넬 노트테이킹법 기반 상세 필기본 생성
 
-최종 결과물은 원본 `txt` 옆의 `md` 파일로 저장됩니다.
+최종 결과물은 원본 옆의 `md` 파일로 저장됩니다. `--name-from-content`는 내용 기반 파일명을 사용합니다. `--transcribe-only`는 전사 JSON 캐시만 생성하고, `--compress-audio`는 M4A 압축만 실행합니다. 두 전용 모드는 LLM 설정이 필요 없습니다.
 
 ## 기본 명령
 
@@ -38,6 +38,8 @@ python -m unittest discover -s tests
 ## 주요 파일
 
 - `lecture_notes/cli.py`: CLI 인자 처리, 파일 탐색, 출력 저장, 진행 로그
+- `lecture_notes/audio.py`: 전사 캐시 및 M4A 압축
+- `lecture_notes/transcription.py`: whispermlx 전사·시간 정렬·화자 구분
 - `lecture_notes/pipeline.py`: 4단계 LLM 호출 파이프라인
 - `lecture_notes/prompts.py`: 각 단계 시스템 프롬프트
 - `tests/test_cli.py`: CLI/파일 처리 테스트
