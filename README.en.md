@@ -374,7 +374,7 @@ Text decoding fallback order:
 Additional behavior:
 
 - Korean filenames and filenames with spaces are supported.
-- Progress is printed per file even without `--verbose`.
+- Per-file progress, word-alignment/diarization percentages, and elapsed time are printed without `--verbose`. A heartbeat every 30 seconds reports the last known percentage while processing; it does not imply additional progress. Model loading is logged separately.
 - `--verbose` adds per-stage pipeline logs.
 - Output is written through a temporary file and renamed into place.
 - `--jobs` controls concurrent files (default: 4). Within each file, correction precedes formatting, then summary and Cornell generation run concurrently. At most two LLM requests per file can run at once (up to 8 by default). Even `--jobs 1` permits parallel summary/Cornell requests.

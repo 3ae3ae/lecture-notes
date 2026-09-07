@@ -6,6 +6,9 @@ import os
 import platform
 import shutil
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
@@ -52,6 +55,37 @@ def render_transcript(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+@contextmanager
+def _progress(stage: str, on_stage: Callable[[str], None]):
+    started = time.monotonic()
+    stopped = threading.Event()
+    percent = 0
+
+    def report(message: str) -> None:
+        on_stage(f"{stage}: {message} (elapsed {time.monotonic() - started:.0f}s)")
+
+    def update(value: float) -> None:
+        nonlocal percent
+        current = min(100, max(0, int(value)))
+        if current > percent:
+            percent = current
+            report(f"{current}%")
+
+    def heartbeat() -> None:
+        while not stopped.wait(30):
+            report(f"waiting for next update; last reported {percent}%")
+
+    report("0%")
+    worker = threading.Thread(target=heartbeat, daemon=True)
+    worker.start()
+    try:
+        yield update
+    finally:
+        stopped.set()
+        worker.join()
+    report("completed")
+
+
 def transcribe_audio(
     path: Path,
     *,
@@ -73,11 +107,16 @@ def transcribe_audio(
     del asr
     if not result["segments"]:
         return ""
-    on_stage("aligning words")
+    on_stage("loading word alignment model")
     aligner, metadata = whispermlx.load_align_model(language_code=result["language"], device="cpu")
-    result = whispermlx.align(result["segments"], aligner, metadata, audio, device="cpu")
+    with _progress("aligning words", on_stage) as progress:
+        result = whispermlx.align(
+            result["segments"], aligner, metadata, audio, device="cpu",
+            progress_callback=progress,
+        )
     del aligner
-    on_stage("identifying speakers")
+    on_stage("loading speaker diarization model")
     diarizer = DiarizationPipeline(token=os.environ["HF_TOKEN"], device="cpu")
-    speakers = diarizer(audio)
+    with _progress("identifying speakers", on_stage) as progress:
+        speakers = diarizer(audio, progress_callback=progress)
     return render_transcript(whispermlx.assign_word_speakers(speakers, result))

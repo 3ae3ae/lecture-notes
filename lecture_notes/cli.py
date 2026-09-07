@@ -883,7 +883,7 @@ def _process_file(
                 raw_text = cached_transcription(
                     txt_path, model=args.asr_model,
                     language=None if args.language == "auto" else args.language,
-                    on_stage=lambda stage: print(f"{progress_prefix} {stage}"),
+                    on_stage=lambda stage: print(f"{progress_prefix} {stage}", flush=True),
                 )
         else:
             raw_text = read_text_file(txt_path)
