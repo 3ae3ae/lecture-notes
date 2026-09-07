@@ -70,6 +70,18 @@ class ReadWriteTests(unittest.TestCase):
 
             self.assertEqual(cli.read_text_file(path), "안녕하세요")
 
+    def test_remove_timestamps_preserves_speakers_and_content(self) -> None:
+        transcript = (
+            "[0.00s] [SPEAKER_00] 설명\n"
+            "  [123.45s] [SPEAKER_01] 질문\n"
+            "시간 10초는 강의 내용"
+        )
+
+        self.assertEqual(
+            cli.remove_timestamps(transcript),
+            "[SPEAKER_00] 설명\n[SPEAKER_01] 질문\n시간 10초는 강의 내용",
+        )
+
     def test_write_markdown_uses_expected_layout(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir, "lecture.md")
@@ -1033,7 +1045,7 @@ class AudioInputTests(unittest.TestCase):
                 result = cli._process_file(index=1, total_files=1, txt_path=path,
                     args=cli.parse_args([]), stage_configs={}, retry_config=RetryConfig())
             self.assertEqual(result[0], "processed")
-            self.assertEqual(pipeline.call_args.args[0], "[0.00s] [SPEAKER_00] 수업")
+            self.assertEqual(pipeline.call_args.args[0], "[SPEAKER_00] 수업")
             self.assertIn("전사", path.with_suffix(".md").read_text())
             self.assertEqual(asr.call_count, 1)
 

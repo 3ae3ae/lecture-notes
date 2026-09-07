@@ -332,6 +332,11 @@ def read_text_file(path: Path) -> str:
     raise RuntimeError(f"Failed to read {path}")
 
 
+def remove_timestamps(text: str) -> str:
+    """Remove whispermlx timestamps while preserving speaker labels and text."""
+    return re.sub(r"(?m)^\s*\[\d+(?:\.\d+)?s\]\s*", "", text)
+
+
 def normalize_summary_text(summary_text: str) -> str:
     normalized_lines: list[str] = []
     replacements = {
@@ -398,7 +403,7 @@ def write_markdown(
 
 def _log(message: str, *, verbose: bool = True, stream: object = sys.stdout) -> None:
     if verbose:
-        print(message, file=stream)
+        print(message, file=stream, flush=True)
 
 
 def _local_config_path() -> Path:
@@ -902,13 +907,12 @@ def _process_file(
             return "processed", f"{progress_prefix} would-process -> {output_path}", None
 
         result = run_pipeline_with_progress(
-            raw_text,
+            remove_timestamps(raw_text),
             stage_configs=stage_configs,
             retry_config=retry_config,
             on_stage=(
                 lambda stage_number, stage_name: _log(
                     f"{progress_prefix} stage {stage_number}/4 {stage_name}",
-                    verbose=args.verbose,
                 )
             ),
         )

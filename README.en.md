@@ -94,7 +94,7 @@ Accept the [pyannote model agreement](https://huggingface.co/pyannote/speaker-di
 - `--language en` selects English; default is Korean. Use `--language auto` for automatic detection.
 - Speaker count is inferred, not fixed at two. Word-level speaker changes are retained.
 - The correction LLM infers professor/student roles from classroom context, preserving speaker IDs and marking roles as inferred (e.g. `[교수 추정 · SPEAKER_00]`). Insufficient evidence yields `역할 미상` (unknown role). Diarization and role inference can be wrong. Plain txt without speaker information cannot recover actual speaker identities.
-- Prompts preserve timestamps, speaker IDs, and question/answer boundaries, and distinguish student guesses from instructor explanations.
+- Speaker IDs and question/answer boundaries are preserved, while timestamps are omitted from final Markdown. Student guesses remain distinct from instructor explanations.
 - Audio takes priority over matching TXT. Multiple recordings sharing an output basename cause a note collision error. Select one using, for example, `--include-glob '*.m4a'`.
 - Only local audio transcription is serialized; completed transcripts proceed through LLM stages while the next recording is transcribed. Dry runs do not load/download models or transcribe audio.
 - Output is a sibling `.md`; existing results are skipped unless `--overwrite` is supplied. Token-truncated LLM responses fail without saving partial notes.
@@ -321,7 +321,7 @@ lecture-notes "./Recording 01.m4a" --name-from-content --language en
 
 A hidden source identifier on the first line lets reruns find and skip generated notes. `--overwrite` updates the existing file while retaining its name to preserve links. Removing that comment or renaming the source breaks the association. Collisions with unrelated notes fail without overwriting them.
 
-Summaries connect concepts, reasons, conditions, and exceptions; preserve figures, units, exam inclusions/exclusions, and instructor corrections; and include assignment/schedule and actual Q&A sections when relevant. Cornell notes use recall questions and adapt row count to the material. Evidence timestamps are included only when present in the source.
+Summaries connect concepts, reasons, conditions, and exceptions; preserve figures, units, exam inclusions/exclusions, and instructor corrections; and include assignment/schedule and actual Q&A sections when relevant. Cornell notes use recall questions and adapt row count to the material. Transcript caches retain timing data, but final Markdown omits timestamps.
 
 Defaults use `gpt-5.6-luna` for correction/formatting and `gpt-5.6-terra` for summaries/Cornell notes. Local `lecture-notes.toml` takes precedence over global configuration.
 
@@ -387,7 +387,8 @@ Additional behavior:
 
 - Korean filenames and filenames with spaces are supported.
 - Per-file progress, word-alignment/diarization percentages, and elapsed time are printed without `--verbose`. A heartbeat every 30 seconds reports the last known percentage while processing; it does not imply additional progress. Model loading is logged separately.
-- `--verbose` adds per-stage pipeline logs.
+- Correction, formatting, summary, and Cornell stages are logged by default; `--verbose` adds config-path and writing details. Initial local inference-library loading is explicitly logged.
+- Audio is decoded through the FFmpeg CLI and passed in memory. Only the loading warning for pyannote's unused built-in TorchCodec decoder is suppressed; transcription, alignment, and diarization errors remain visible.
 - Output is written through a temporary file and renamed into place.
 - `--jobs` controls concurrent files (default: 4). Within each file, correction precedes formatting, then summary and Cornell generation run concurrently. At most two LLM requests per file can run at once (up to 8 by default). Even `--jobs 1` permits parallel summary/Cornell requests.
 - Transient timeout, rate limit, and 5xx errors are retried according to `--retries` and `--retry-backoff`.

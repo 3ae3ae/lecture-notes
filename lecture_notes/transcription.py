@@ -8,6 +8,7 @@ import shutil
 import sys
 import threading
 import time
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
@@ -109,12 +110,20 @@ def transcribe_audio(
     if cpu_threads is not None and cpu_threads < 1:
         raise ValueError("cpu_threads must be >= 1")
     validate_audio_environment()
+    on_stage("loading local inference libraries (first load may take a while)")
     try:
         import torch
         # Capture the caller's setting before Silero can change it during import/load.
         original_threads = torch.get_num_threads()
         import whispermlx
-        from whispermlx.diarize import DiarizationPipeline
+        with warnings.catch_warnings():
+            # We decode with FFmpeg and pass waveforms to pyannote. Its optional
+            # TorchCodec file decoder is never used by this pipeline.
+            warnings.filterwarnings(
+                "ignore", message=r"\s*torchcodec is not installed correctly",
+                category=UserWarning, module=r"pyannote\.audio\.core\.io",
+            )
+            from whispermlx.diarize import DiarizationPipeline
     except ImportError as exc:
         raise RuntimeError('Install audio support: uv tool install ".[audio]" --python 3.12') from exc
 
