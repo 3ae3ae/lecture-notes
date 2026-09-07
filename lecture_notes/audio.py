@@ -18,6 +18,7 @@ def transcript_cache_path(path: Path) -> Path:
 
 
 def cached_transcription(path: Path, *, model: str, language: str | None,
+                         cpu_threads: int | None = None,
                          on_stage: Callable[[str], None]) -> str:
     stat = path.stat()
     signature = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns,
@@ -31,7 +32,7 @@ def cached_transcription(path: Path, *, model: str, language: str | None,
             return saved["text"]
     except (OSError, ValueError):
         pass
-    text = transcribe_audio(path, model=model, language=language, on_stage=on_stage)
+    text = transcribe_audio(path, model=model, language=language, cpu_threads=cpu_threads, on_stage=on_stage)
     if text.strip():
         if path.stat().st_mtime_ns != stat.st_mtime_ns or path.stat().st_size != stat.st_size:
             raise RuntimeError(f"audio changed during transcription: {path}; retry")

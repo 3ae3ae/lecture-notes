@@ -14,6 +14,10 @@ It is designed for cases where you already have raw transcript text and want:
 
 The CLI uses OpenAI's Python SDK. Official OpenAI providers use the Responses API by default, while OpenAI-compatible providers use the Chat Completions API.
 
+## CPU processing speed
+
+After Silero changes Torch to one thread, the original thread count is restored immediately after ASR. The CPU thread count used for alignment/diarization is logged; override it with, for example, `--cpu-threads 8`. `--jobs` controls concurrent files/API work, while `--cpu-threads` controls local model CPU parallelism. Speedup is not necessarily proportional to thread count; the ASR model remains `large-v3`.
+
 ## Unified workflow
 
 Use `lecture-notes` instead of the previous `transcribe.sh` and `compress_audio.sh` scripts.
@@ -324,6 +328,7 @@ The synthetic Korean lecture at `tests/fixtures/lecture_quality.txt` exercises e
 - `--print-config-paths`
 - `--profile <name>`
 - `--asr-model <name>`
+- `--cpu-threads <n>`
 - `--name-from-content`
 - `--transcribe-only`
 - `--compress-audio`

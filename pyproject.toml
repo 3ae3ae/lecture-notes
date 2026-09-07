@@ -1,6 +1,6 @@
 [project]
 name = "lecture-notes"
-version = "0.6.1"
+version = "0.6.2"
 description = "CLI tool to turn lecture recordings and transcripts into speaker-aware Markdown notes."
 readme = "README.md"
 requires-python = ">=3.11"

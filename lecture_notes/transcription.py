@@ -91,10 +91,16 @@ def transcribe_audio(
     *,
     model: str = "large-v3",
     language: str | None = "ko",
+    cpu_threads: int | None = None,
     on_stage: Callable[[str], None] = print,
 ) -> str:
+    if cpu_threads is not None and cpu_threads < 1:
+        raise ValueError("cpu_threads must be >= 1")
     validate_audio_environment()
     try:
+        import torch
+        # Capture the caller's setting before Silero can change it during import/load.
+        original_threads = torch.get_num_threads()
         import whispermlx
         from whispermlx.diarize import DiarizationPipeline
     except ImportError as exc:
@@ -102,9 +108,17 @@ def transcribe_audio(
 
     on_stage("loading audio and transcribing with whispermlx")
     audio = whispermlx.load_audio(str(path))
-    asr = whispermlx.load_model(model, device="cpu", language=language, vad_method="silero")
-    result = asr.transcribe(audio)
+    threads = cpu_threads if cpu_threads is not None else original_threads
+    try:
+        torch.set_num_threads(1)
+        asr = whispermlx.load_model(model, device="cpu", language=language, vad_method="silero")
+        result = asr.transcribe(audio)
+    finally:
+        # Silero sets the process-wide Torch thread count to 1. Do not leak that
+        # setting into the much heavier alignment and speaker embedding models.
+        torch.set_num_threads(threads)
     del asr
+    on_stage(f"CPU alignment/diarization threads: {threads}")
     if not result["segments"]:
         return ""
     on_stage("loading word alignment model")

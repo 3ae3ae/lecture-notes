@@ -226,6 +226,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=1.0,
         help="Initial retry backoff in seconds. Default: 1.0.",
     )
+    parser.add_argument("--cpu-threads", type=int,
+                        help="Torch CPU threads for alignment/diarization. Default: preserve Torch's initial setting.")
     parser.add_argument("--asr-model", default="large-v3", help="whispermlx model. Default: large-v3.")
     parser.add_argument("--language", default="ko", help="Audio language: ko (default), en, or auto.")
     parser.add_argument("--name-from-content", action="store_true",
@@ -883,6 +885,7 @@ def _process_file(
                 raw_text = cached_transcription(
                     txt_path, model=args.asr_model,
                     language=None if args.language == "auto" else args.language,
+                    cpu_threads=args.cpu_threads,
                     on_stage=lambda stage: print(f"{progress_prefix} {stage}", flush=True),
                 )
         else:
@@ -965,6 +968,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.limit is not None and args.limit < 0:
         print("error: --limit must be >= 0.", file=sys.stderr)
+        return 2
+    if args.cpu_threads is not None and args.cpu_threads < 1:
+        print("error: --cpu-threads must be >= 1.", file=sys.stderr)
         return 2
     if args.jobs < 1:
         print("error: --jobs must be >= 1.", file=sys.stderr)

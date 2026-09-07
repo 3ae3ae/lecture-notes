@@ -14,6 +14,10 @@
 
 내부적으로 OpenAI Python SDK를 사용합니다. OpenAI 공식 API는 기본적으로 Responses API를 사용하고, OpenAI 호환 서버는 Chat Completions API를 사용합니다.
 
+## CPU 처리 속도
+
+Silero 음성 탐지가 PyTorch를 1스레드로 바꿔도 전사 직후 원래 스레드 수를 복원합니다. 단어 정렬·화자 구분에 사용할 CPU 스레드 수는 로그에 표시되며, `--cpu-threads 8`처럼 지정할 수도 있습니다. `--jobs`는 API/파일 병렬도, `--cpu-threads`는 로컬 모델의 CPU 연산 병렬도입니다. 스레드 수에 비례하는 속도 향상을 보장하지는 않으며, 전사 모델은 `large-v3`를 유지합니다.
+
 ## 개인용 통합 사용법
 
 이제 `transcribe.sh`와 `compress_audio.sh` 대신 `lecture-notes` 하나를 사용합니다.
@@ -324,6 +328,7 @@ lecture-notes "./녹음 01.m4a" --name-from-content --language ko
 - `--print-config-paths`
 - `--profile <name>`
 - `--asr-model <name>`
+- `--cpu-threads <n>`
 - `--name-from-content`
 - `--transcribe-only`
 - `--compress-audio`

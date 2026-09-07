@@ -18,10 +18,13 @@ class TranscriptionTests(TestCase):
 
     def test_audio_api_contract(self):
         api = mock.Mock()
+        torch = mock.Mock()
+        torch.get_num_threads.return_value = 8
         result = {"language": "ko", "segments": [{"start": 0, "text": "안녕하세요"}]}
         api.load_model.return_value.transcribe.return_value = result
         api.load_align_model.return_value = ("aligner", "metadata")
         def align(*args, progress_callback, **kwargs):
+            torch.set_num_threads.assert_called_with(8)
             progress_callback(10)
             progress_callback(50)
             return result
@@ -35,7 +38,7 @@ class TranscriptionTests(TestCase):
             return speakers
         diarizer.return_value.side_effect = diarize
         logs = []
-        with mock.patch.dict("sys.modules", {"whispermlx": api,
+        with mock.patch.dict("sys.modules", {"torch": torch, "whispermlx": api,
                              "whispermlx.diarize": SimpleNamespace(DiarizationPipeline=diarizer)}), \
              mock.patch("lecture_notes.transcription.validate_audio_environment"), \
              mock.patch.dict("os.environ", {"HF_TOKEN": "test"}):
@@ -73,3 +76,26 @@ class TranscriptionTests(TestCase):
         self.assertEqual(sum("aligning words: 20%" in line for line in logs), 1)
         self.assertFalse(any("completed" in line for line in logs))
         event.set.assert_called_once()
+
+    def test_thread_setting_restored_after_silero_failure(self):
+        for requested, expected in ((None, 8), (4, 4)):
+            with self.subTest(requested=requested):
+                torch = mock.Mock()
+                torch.get_num_threads.return_value = 8
+                api = mock.Mock()
+                def load(*args, **kwargs):
+                    torch.set_num_threads.assert_called_with(1)
+                    raise RuntimeError("ASR failed")
+                api.load_model.side_effect = load
+                with mock.patch.dict("sys.modules", {"torch": torch, "whispermlx": api,
+                                     "whispermlx.diarize": SimpleNamespace(DiarizationPipeline=mock.Mock())}), \
+                     mock.patch("lecture_notes.transcription.validate_audio_environment"):
+                    with self.assertRaisesRegex(RuntimeError, "ASR failed"):
+                        transcribe_audio(Path("lecture.m4a"), cpu_threads=requested, on_stage=lambda _: None)
+                self.assertEqual(torch.set_num_threads.call_args_list, [mock.call(1), mock.call(expected)])
+
+    def test_invalid_thread_count_rejected_without_loading_models(self):
+        with mock.patch("lecture_notes.transcription.validate_audio_environment") as validate:
+            with self.assertRaisesRegex(ValueError, "cpu_threads"):
+                transcribe_audio(Path("lecture.m4a"), cpu_threads=0)
+            validate.assert_not_called()
