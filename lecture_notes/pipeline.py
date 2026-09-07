@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Mapping
 
@@ -229,29 +230,23 @@ def run_pipeline_with_progress(
         retry_config=retry_config,
     )
 
-    summary_config = stage_configs["summary"]
-    stage_number, stage_name, system_prompt = _STAGE_DETAILS["summary"]
-    if on_stage is not None:
-        on_stage(stage_number, stage_name)
-    summary_text = _call_model(
-        stage_config=summary_config,
-        system_prompt=system_prompt,
-        user_text=formatted_transcript,
-        retry_config=retry_config,
-    )
-
+    # Both outputs depend on the formatted transcript, not on each other.
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {}
+        for name in ("summary", "cornell"):
+            stage_number, stage_name, system_prompt = _STAGE_DETAILS[name]
+            if on_stage is not None:
+                on_stage(stage_number, stage_name)
+            futures[name] = executor.submit(
+                _call_model,
+                stage_config=stage_configs[name],
+                system_prompt=system_prompt,
+                user_text=formatted_transcript,
+                retry_config=retry_config,
+            )
+        summary_text = futures["summary"].result()
+        cornell_notes_text = futures["cornell"].result()
     title, summary_text = _split_title(summary_text)
-
-    cornell_config = stage_configs["cornell"]
-    stage_number, stage_name, system_prompt = _STAGE_DETAILS["cornell"]
-    if on_stage is not None:
-        on_stage(stage_number, stage_name)
-    cornell_notes_text = _call_model(
-        stage_config=cornell_config,
-        system_prompt=system_prompt,
-        user_text=formatted_transcript,
-        retry_config=retry_config,
-    )
     _, cornell_notes_text = _split_title(cornell_notes_text)
     return ProcessedDocument(
         title=title,

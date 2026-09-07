@@ -12,6 +12,7 @@ import unicodedata
 import os
 import sys
 import tempfile
+import threading
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from openai import OpenAI
 
 DEFAULT_EXCLUDE_DIRS = {".git", ".venv", "node_modules", "__pycache__"}
+AUDIO_LOCK = threading.Lock()
 READ_ENCODINGS = ("utf-8", "utf-8-sig", "cp949")
 CONFIG_FILENAME = "lecture-notes.toml"
 GLOBAL_CONFIG_PATH = Path("~/.config/lecture-notes/config.toml")
@@ -209,8 +211,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--jobs",
         type=int,
-        default=1,
-        help="Number of files to process concurrently. Default: 1.",
+        default=4,
+        help="Number of files to process concurrently. Default: 4. Each file can make two concurrent LLM requests.",
     )
     parser.add_argument(
         "--retries",
@@ -876,11 +878,13 @@ def _process_file(
             if args.dry_run:
                 target = transcript_cache_path(txt_path) if args.transcribe_only else output_path
                 return "processed", f"{progress_prefix} would-transcribe -> {target}", None
-            raw_text = cached_transcription(
-                txt_path, model=args.asr_model,
-                language=None if args.language == "auto" else args.language,
-                on_stage=lambda stage: print(f"{progress_prefix} {stage}"),
-            )
+            print(f"{progress_prefix} waiting for local transcription")
+            with AUDIO_LOCK:
+                raw_text = cached_transcription(
+                    txt_path, model=args.asr_model,
+                    language=None if args.language == "auto" else args.language,
+                    on_stage=lambda stage: print(f"{progress_prefix} {stage}"),
+                )
         else:
             raw_text = read_text_file(txt_path)
         if not raw_text.strip():
@@ -1020,11 +1024,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ConfigError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-
-    # ponytail: serialize audio batches; use a dedicated ASR worker if overlap becomes necessary.
-    if any(path.suffix.lower() in AUDIO_SUFFIXES for path in txt_files) and args.jobs > 1:
-        print("audio inputs detected; processing sequentially to bound model memory")
-        args.jobs = 1
 
     counts = {"processed": 0, "skipped": 0, "errors": 0}
     retry_config = RetryConfig(

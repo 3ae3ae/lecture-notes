@@ -86,7 +86,7 @@ Accept the [pyannote model agreement](https://huggingface.co/pyannote/speaker-di
 - The correction LLM infers professor/student roles from classroom context, preserving speaker IDs and marking roles as inferred (e.g. `[교수 추정 · SPEAKER_00]`). Insufficient evidence yields `역할 미상` (unknown role). Diarization and role inference can be wrong. Plain txt without speaker information cannot recover actual speaker identities.
 - Prompts preserve timestamps, speaker IDs, and question/answer boundaries, and distinguish student guesses from instructor explanations.
 - Audio takes priority over matching TXT. Multiple recordings sharing an output basename cause a note collision error. Select one using, for example, `--include-glob '*.m4a'`.
-- Batches containing audio run sequentially regardless of `--jobs`. Dry runs do not load/download models or transcribe audio.
+- Only local audio transcription is serialized; completed transcripts proceed through LLM stages while the next recording is transcribed. Dry runs do not load/download models or transcribe audio.
 - Output is a sibling `.md`; existing results are skipped unless `--overwrite` is supplied. Token-truncated LLM responses fail without saving partial notes.
 
 Real transcription and role accuracy depend on recording quality and model behavior. Split recordings that exceed the LLM context window; automatic chunking is not implemented.
@@ -377,7 +377,7 @@ Additional behavior:
 - Progress is printed per file even without `--verbose`.
 - `--verbose` adds per-stage pipeline logs.
 - Output is written through a temporary file and renamed into place.
-- `--jobs` processes text-only batches concurrently while keeping the 4 stages inside each file sequential.
+- `--jobs` controls concurrent files (default: 4). Within each file, correction precedes formatting, then summary and Cornell generation run concurrently. At most two LLM requests per file can run at once (up to 8 by default). Even `--jobs 1` permits parallel summary/Cornell requests.
 - Transient timeout, rate limit, and 5xx errors are retried according to `--retries` and `--retry-backoff`.
 
 ## Output Format
