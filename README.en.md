@@ -43,6 +43,8 @@ Speaker transcripts are cached in `recording.m4a.transcript.json`, keyed by sour
 
 Compression is a separate, M4A-only operation. Inputs at or below 69 kbps are skipped. Originals are replaced only after successful conversion, duration validation, and a size reduction. This is lossy compression; transcribe first when needed. Neither standalone mode reads LLM configuration.
 
+Audio dependencies constrain TorchCodec to the newest compatible series, 0.7, for WhisperMLX 3.13.1 and its required Torch 2.8. uv cannot infer undeclared binary compatibility. Run the install/update command above after active jobs finish.
+
 ## Install
 
 Install directly from GitHub with `uv tool`:

@@ -1,6 +1,6 @@
 [project]
 name = "lecture-notes"
-version = "0.5.0"
+version = "0.5.1"
 description = "CLI tool to turn lecture recordings and transcripts into speaker-aware Markdown notes."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,7 +9,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-audio = ["whispermlx==3.13.1"]
+audio = [
+    "whispermlx==3.13.1",
+    # WhisperMLX requires Torch 2.8; TorchCodec 0.7 is its newest compatible series.
+    "torchcodec>=0.7,<0.8",
+]
 
 [project.scripts]
 lecture-notes = "lecture_notes.cli:main"
