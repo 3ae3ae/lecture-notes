@@ -14,6 +14,12 @@
 
 내부적으로 OpenAI Python SDK를 사용합니다. OpenAI 공식 API는 기본적으로 Responses API를 사용하고, OpenAI 호환 서버는 Chat Completions API를 사용합니다.
 
+## Apple GPU 사용
+
+기본 `--device auto`는 MPS를 사용할 수 있으면 단어 정렬 모델과 화자 구분 모델을 Apple GPU에 올립니다. MPS가 없으면 CPU를 선택합니다. 실제 선택된 장치는 로그에 표시합니다. Whisper 전사는 이 옵션과 무관하게 MLX GPU를 사용하고, Silero 음성 탐지는 CPU를 사용합니다.
+
+MPS에서 지원하지 않는 연산이나 메모리 오류가 생기면 `--device cpu`로 재실행하세요. 실행 중 오류에 대한 자동 CPU 재시도는 하지 않습니다. `--device mps`는 MPS 사용을 명시적으로 요구합니다. 정렬 후처리·군집화 등 CPU 작업은 남으며, 속도와 정확도의 비교 테스트는 수행하지 않았습니다. 장치 변경만으로 기존 전사 캐시는 무효화하지 않습니다.
+
 ## CPU 처리 속도
 
 Silero 음성 탐지가 PyTorch를 1스레드로 바꿔도 전사 직후 원래 스레드 수를 복원합니다. 단어 정렬·화자 구분에 사용할 CPU 스레드 수는 로그에 표시되며, `--cpu-threads 8`처럼 지정할 수도 있습니다. `--jobs`는 API/파일 병렬도, `--cpu-threads`는 로컬 모델의 CPU 연산 병렬도입니다. 스레드 수에 비례하는 속도 향상을 보장하지는 않으며, 전사 모델은 `large-v3`를 유지합니다.
@@ -329,6 +335,7 @@ lecture-notes "./녹음 01.m4a" --name-from-content --language ko
 - `--profile <name>`
 - `--asr-model <name>`
 - `--cpu-threads <n>`
+- `--device <auto|mps|cpu>`
 - `--name-from-content`
 - `--transcribe-only`
 - `--compress-audio`

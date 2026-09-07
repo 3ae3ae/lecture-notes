@@ -20,6 +20,7 @@ class TranscriptionTests(TestCase):
         api = mock.Mock()
         torch = mock.Mock()
         torch.get_num_threads.return_value = 8
+        torch.backends.mps.is_available.return_value = True
         result = {"language": "ko", "segments": [{"start": 0, "text": "안녕하세요"}]}
         api.load_model.return_value.transcribe.return_value = result
         api.load_align_model.return_value = ("aligner", "metadata")
@@ -45,8 +46,8 @@ class TranscriptionTests(TestCase):
             text = transcribe_audio(Path("한글 강의.m4a"), language="ko", on_stage=logs.append)
         api.load_audio.assert_called_once_with("한글 강의.m4a")
         api.load_model.assert_called_once_with("large-v3", device="cpu", language="ko", vad_method="silero")
-        api.align.assert_called_once_with(result["segments"], "aligner", "metadata", api.load_audio.return_value, device="cpu", progress_callback=mock.ANY)
-        diarizer.assert_called_once_with(token="test", device="cpu")
+        api.align.assert_called_once_with(result["segments"], "aligner", "metadata", api.load_audio.return_value, device="mps", progress_callback=mock.ANY)
+        diarizer.assert_called_once_with(token="test", device="mps")
         api.assign_word_speakers.assert_called_once_with(speakers, result)
         self.assertTrue(any("aligning words: 50%" in line for line in logs))
         self.assertTrue(any("identifying speakers: 25%" in line for line in logs))
@@ -99,3 +100,16 @@ class TranscriptionTests(TestCase):
             with self.assertRaisesRegex(ValueError, "cpu_threads"):
                 transcribe_audio(Path("lecture.m4a"), cpu_threads=0)
             validate.assert_not_called()
+
+
+    def test_device_selection_and_explicit_cpu_override(self):
+        from lecture_notes.transcription import _resolve_device
+        torch = mock.Mock()
+        for available in (True, False):
+            torch.backends.mps.is_available.return_value = available
+            self.assertEqual(_resolve_device(torch, "auto"), "mps" if available else "cpu")
+            self.assertEqual(_resolve_device(torch, "cpu"), "cpu")
+        with self.assertRaisesRegex(RuntimeError, "--device cpu"):
+            _resolve_device(torch, "mps")
+        with self.assertRaises(ValueError):
+            _resolve_device(torch, "cuda")

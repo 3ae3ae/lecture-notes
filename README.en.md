@@ -14,6 +14,12 @@ It is designed for cases where you already have raw transcript text and want:
 
 The CLI uses OpenAI's Python SDK. Official OpenAI providers use the Responses API by default, while OpenAI-compatible providers use the Chat Completions API.
 
+## Apple GPU support
+
+The default `--device auto` selects MPS for alignment and diarization models when available, otherwise CPU. The selected device is logged. Whisper ASR still uses MLX GPU independently, and Silero VAD stays on CPU.
+
+If MPS encounters unsupported operations or memory errors, rerun with `--device cpu`. Runtime failures are not automatically retried on CPU. `--device mps` explicitly requires MPS availability. Alignment postprocessing and clustering still include CPU work; speed and accuracy comparisons have not been run. Changing devices alone does not invalidate existing transcript caches.
+
 ## CPU processing speed
 
 After Silero changes Torch to one thread, the original thread count is restored immediately after ASR. The CPU thread count used for alignment/diarization is logged; override it with, for example, `--cpu-threads 8`. `--jobs` controls concurrent files/API work, while `--cpu-threads` controls local model CPU parallelism. Speedup is not necessarily proportional to thread count; the ASR model remains `large-v3`.
@@ -329,6 +335,7 @@ The synthetic Korean lecture at `tests/fixtures/lecture_quality.txt` exercises e
 - `--profile <name>`
 - `--asr-model <name>`
 - `--cpu-threads <n>`
+- `--device <auto|mps|cpu>`
 - `--name-from-content`
 - `--transcribe-only`
 - `--compress-audio`

@@ -86,12 +86,24 @@ def _progress(stage: str, on_stage: Callable[[str], None]):
     report("completed")
 
 
+def _resolve_device(torch: Any, device: str) -> str:
+    if device not in {"auto", "cpu", "mps"}:
+        raise ValueError("device must be auto, cpu, or mps")
+    if device == "cpu":
+        return "cpu"
+    available = torch.backends.mps.is_available()
+    if device == "mps" and not available:
+        raise RuntimeError("MPS is unavailable; use --device cpu")
+    return "mps" if available else "cpu"
+
+
 def transcribe_audio(
     path: Path,
     *,
     model: str = "large-v3",
     language: str | None = "ko",
     cpu_threads: int | None = None,
+    device: str = "auto",
     on_stage: Callable[[str], None] = print,
 ) -> str:
     if cpu_threads is not None and cpu_threads < 1:
@@ -106,6 +118,8 @@ def transcribe_audio(
     except ImportError as exc:
         raise RuntimeError('Install audio support: uv tool install ".[audio]" --python 3.12') from exc
 
+    device = _resolve_device(torch, device)
+    on_stage(f"alignment/diarization device: {device}")
     on_stage("loading audio and transcribing with whispermlx")
     audio = whispermlx.load_audio(str(path))
     threads = cpu_threads if cpu_threads is not None else original_threads
@@ -122,15 +136,15 @@ def transcribe_audio(
     if not result["segments"]:
         return ""
     on_stage("loading word alignment model")
-    aligner, metadata = whispermlx.load_align_model(language_code=result["language"], device="cpu")
+    aligner, metadata = whispermlx.load_align_model(language_code=result["language"], device=device)
     with _progress("aligning words", on_stage) as progress:
         result = whispermlx.align(
-            result["segments"], aligner, metadata, audio, device="cpu",
+            result["segments"], aligner, metadata, audio, device=device,
             progress_callback=progress,
         )
     del aligner
     on_stage("loading speaker diarization model")
-    diarizer = DiarizationPipeline(token=os.environ["HF_TOKEN"], device="cpu")
+    diarizer = DiarizationPipeline(token=os.environ["HF_TOKEN"], device=device)
     with _progress("identifying speakers", on_stage) as progress:
         speakers = diarizer(audio, progress_callback=progress)
     return render_transcript(whispermlx.assign_word_speakers(speakers, result))

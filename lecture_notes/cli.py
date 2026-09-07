@@ -226,6 +226,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=1.0,
         help="Initial retry backoff in seconds. Default: 1.0.",
     )
+    parser.add_argument("--device", choices=("auto", "mps", "cpu"), default="auto",
+                        help="Alignment/diarization device. Default: MPS when available, otherwise CPU.")
     parser.add_argument("--cpu-threads", type=int,
                         help="Torch CPU threads for alignment/diarization. Default: preserve Torch's initial setting.")
     parser.add_argument("--asr-model", default="large-v3", help="whispermlx model. Default: large-v3.")
@@ -886,6 +888,7 @@ def _process_file(
                     txt_path, model=args.asr_model,
                     language=None if args.language == "auto" else args.language,
                     cpu_threads=args.cpu_threads,
+                    device=args.device,
                     on_stage=lambda stage: print(f"{progress_prefix} {stage}", flush=True),
                 )
         else:
