@@ -57,6 +57,7 @@ class ConcurrencyTests(unittest.TestCase):
                 Path(directory, name).touch()
             with mock.patch.object(cli, '_resolve_pipeline_settings', return_value=(None, None, False)), \
                  mock.patch.object(cli, '_build_stage_configs', return_value={}), \
+                 mock.patch.object(cli, 'compress_audio', return_value='skipped'), \
                  mock.patch.object(cli, 'cached_transcription', side_effect=transcribe), \
                  mock.patch.object(cli, 'run_pipeline_with_progress', side_effect=notes), \
                  redirect_stdout(io.StringIO()):

@@ -31,6 +31,7 @@ class AudioWorkflowTests(TestCase):
             path = Path(directory, "강의.m4a")
             path.touch()
             with mock.patch.object(audio, "transcribe_audio", return_value="전사") as asr, \
+                 mock.patch.object(cli, "compress_audio", return_value="skipped") as compress, \
                  mock.patch.object(cli, "run_pipeline_with_progress", side_effect=RuntimeError("failed")), \
                  redirect_stdout(io.StringIO()):
                 kwargs = dict(index=1, total_files=1, txt_path=path, args=cli.parse_args([]),
@@ -38,12 +39,35 @@ class AudioWorkflowTests(TestCase):
                 self.assertEqual(cli._process_file(**kwargs)[0], "error")
                 self.assertEqual(cli._process_file(**kwargs)[0], "error")
                 self.assertEqual(asr.call_count, 1)
+                self.assertEqual(compress.call_count, 2)
             self.assertTrue(audio.transcript_cache_path(path).exists())
             self.assertFalse(path.with_suffix('.md').exists())
 
     def test_audio_preferred_over_legacy_text_before_limit(self):
         paths = [Path("강의.txt"), Path("강의.M4A"), Path("기타.txt")]
         self.assertEqual(cli.select_inputs(paths), paths[1:])
+
+    def test_m4a_compression_is_default_and_can_be_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, "lecture.m4a")
+            path.touch()
+            common = dict(index=1, total_files=1, txt_path=path, stage_configs={},
+                          retry_config=cli.RetryConfig())
+            with mock.patch.object(cli, "compress_audio", return_value="compressed") as compress, \
+                 mock.patch.object(cli, "cached_transcription", return_value="text"), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    cli._process_file(args=cli.parse_args(["--transcribe-only"]), **common)[0],
+                    "processed",
+                )
+                self.assertEqual(
+                    cli._process_file(
+                        args=cli.parse_args(["--transcribe-only", "--no-compress-audio"]),
+                        **common,
+                    )[0],
+                    "processed",
+                )
+            compress.assert_called_once_with(path)
 
     def test_standalone_modes_do_not_load_llm_config_or_run_on_dry_run(self):
         for mode in ("--compress-audio", "--transcribe-only"):

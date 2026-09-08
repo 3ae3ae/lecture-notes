@@ -51,7 +51,7 @@ lecture-notes /Users/3ae/Github/obsidian --compress-audio
 
 전사 결과는 `녹음.m4a.transcript.json`에 원본의 크기·수정시각, 전사 모델·언어와 함께 저장합니다. 노트 생성이 실패해도 재실행 시 동일한 전사를 재사용합니다. 원본이나 설정이 바뀌면 새로 전사합니다. `--overwrite`는 노트만 다시 만들며, 전사 자체를 강제로 다시 하려면 해당 캐시 파일을 삭제하세요. 기존 TXT는 자동으로 덮어쓰지 않습니다.
 
-압축 모드는 M4A만 대상으로 하며 다른 작업과 별도로 실행됩니다. 기존 스크립트처럼 69 kbps 이하는 건너뜁니다. 변환 성공·오디오 길이·파일 크기를 확인한 후에만 원본을 교체합니다. 손실 압축이므로 필요한 경우 전사를 먼저 완료하세요. 두 전용 모드 모두 LLM 설정을 읽지 않습니다.
+M4A는 기본으로 전사 전에 모노 AAC 64 kbps로 압축합니다. 이미 69 kbps 이하면 건너뛰며, 변환 성공·오디오 길이·파일 크기를 확인한 후에만 원본을 교체합니다. 압축을 건너뛰려면 `--no-compress-audio`를 사용하세요. `--compress-audio`는 전사 없이 M4A만 정리하는 전용 모드입니다. 손실 압축이므로 원본 보관이 필요하면 이 기본값을 끄세요. 두 전용 모드 모두 LLM 설정을 읽지 않습니다.
 
 오디오 의존성은 WhisperMLX 3.13.1의 Torch 2.8 요구에 맞춰 TorchCodec을 최신 호환 계열인 0.7로 제한합니다. uv도 패키지에 명시되지 않은 바이너리 호환성까지 자동으로 판별하지는 않습니다. 실행 중인 작업이 끝난 뒤 위 설치/갱신 명령을 실행하세요.
 
@@ -339,6 +339,7 @@ lecture-notes "./녹음 01.m4a" --name-from-content --language ko
 - `--name-from-content`
 - `--transcribe-only`
 - `--compress-audio`
+- `--no-compress-audio`
 - `--language <code>`
 - `--model <name>`
 - `--api-key <key>`

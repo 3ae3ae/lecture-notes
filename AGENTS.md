@@ -13,7 +13,7 @@
 
 교정 → 서식화 순서를 지키고 요약·코넬 노트는 병렬 실행합니다. 기본 `--jobs 4`로 파일별 LLM 처리를 병렬화하며, 로컬 음성 전사만 잠금으로 직렬화합니다.
 
-최종 결과물은 원본 옆의 `md` 파일로 저장됩니다. `--name-from-content`는 내용 기반 파일명을 사용합니다. `--transcribe-only`는 전사 JSON 캐시만 생성하고, `--compress-audio`는 M4A 압축만 실행합니다. 두 전용 모드는 LLM 설정이 필요 없습니다.
+최종 결과물은 원본 옆의 `md` 파일로 저장됩니다. `--name-from-content`는 내용 기반 파일명을 사용합니다. M4A는 전사 전에 기본으로 압축하며 `--no-compress-audio`로 건너뛸 수 있습니다. `--transcribe-only`는 전사 JSON 캐시만 생성하고, `--compress-audio`는 M4A 압축만 실행합니다. 두 전용 모드는 LLM 설정이 필요 없습니다.
 
 ## 기본 명령
 

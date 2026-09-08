@@ -51,7 +51,7 @@ When a recording and legacy TXT share a basename, audio takes priority and the T
 
 Speaker transcripts are cached in `recording.m4a.transcript.json`, keyed by source size/mtime, ASR model, and language. Reruns reuse the transcript after note-generation failures. Source/config changes invalidate it. `--overwrite` regenerates notes; delete the cache to force retranscription. Existing TXT files are never automatically overwritten.
 
-Compression is a separate, M4A-only operation. Inputs at or below 69 kbps are skipped. Originals are replaced only after successful conversion, duration validation, and a size reduction. This is lossy compression; transcribe first when needed. Neither standalone mode reads LLM configuration.
+M4A files are compressed to mono AAC at 64 kbps before transcription by default. Inputs at or below 69 kbps are skipped. Originals are replaced only after successful conversion, duration validation, and a size reduction. Use `--no-compress-audio` to skip this default. `--compress-audio` remains a standalone M4A-only cleanup mode. Compression is lossy, so disable the default if the original must be retained. Neither standalone mode reads LLM configuration.
 
 Audio dependencies constrain TorchCodec to the newest compatible series, 0.7, for WhisperMLX 3.13.1 and its required Torch 2.8. uv cannot infer undeclared binary compatibility. Run the install/update command above after active jobs finish.
 
@@ -339,6 +339,7 @@ The synthetic Korean lecture at `tests/fixtures/lecture_quality.txt` exercises e
 - `--name-from-content`
 - `--transcribe-only`
 - `--compress-audio`
+- `--no-compress-audio`
 - `--language <code>`
 - `--model <name>`
 - `--api-key <key>`

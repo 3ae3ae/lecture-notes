@@ -234,6 +234,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--language", default="ko", help="Audio language: ko (default), en, or auto.")
     parser.add_argument("--name-from-content", action="store_true",
                         help="Name new notes using the source filename and generated lecture title.")
+    parser.add_argument("--no-compress-audio", action="store_true",
+                        help="Do not compress M4A files before transcription.")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--transcribe-only", action="store_true", help="Save speaker transcripts without generating notes.")
     modes.add_argument("--compress-audio", action="store_true", help="Only compress M4A files in place to mono AAC 64 kbps.")
@@ -887,6 +889,8 @@ def _process_file(
             if args.dry_run:
                 target = transcript_cache_path(txt_path) if args.transcribe_only else output_path
                 return "processed", f"{progress_prefix} would-transcribe -> {target}", None
+            if txt_path.suffix.lower() == ".m4a" and not args.no_compress_audio:
+                print(f"{progress_prefix} {compress_audio(txt_path)}", flush=True)
             print(f"{progress_prefix} waiting for local transcription")
             with AUDIO_LOCK:
                 raw_text = cached_transcription(
