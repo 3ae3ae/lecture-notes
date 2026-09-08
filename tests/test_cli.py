@@ -1137,7 +1137,7 @@ class ContentNamingTests(unittest.TestCase):
                               stage_configs={}, retry_config=RetryConfig())
                 self.assertEqual(cli._process_file(**kwargs)[0], "processed")
                 output = cli.existing_output(source)
-                self.assertEqual(output.name, "녹음 01 - 상관관계와 인과관계.md")
+                self.assertEqual(output.name, "상관관계와 인과관계.md")
                 self.assertEqual(cli._process_file(**kwargs)[0], "skipped")
                 self.assertEqual(pipeline.call_count, 1)
                 args.overwrite = True

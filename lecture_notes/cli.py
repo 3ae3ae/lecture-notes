@@ -233,7 +233,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--asr-model", default="large-v3", help="whispermlx model. Default: large-v3.")
     parser.add_argument("--language", default="ko", help="Audio language: ko (default), en, or auto.")
     parser.add_argument("--name-from-content", action="store_true",
-                        help="Name new notes using the source filename and generated lecture title.")
+                        help="Name new notes using only the generated lecture title.")
     parser.add_argument("--no-compress-audio", action="store_true",
                         help="Do not compress M4A files before transcription.")
     modes = parser.add_mutually_exclusive_group()
@@ -318,8 +318,7 @@ def content_output_path(source: Path, title: str) -> Path:
     topic = clean(title, 120)
     if not topic:
         return source.with_suffix(".md")
-    stem = clean(source.stem, 100) or "lecture"
-    return source.with_name(f"{stem} - {topic}.md")
+    return source.with_name(f"{topic}.md")
 
 
 def read_text_file(path: Path) -> str:
