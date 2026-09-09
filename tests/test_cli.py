@@ -1144,7 +1144,8 @@ class ContentNamingTests(unittest.TestCase):
                 result.title = "새 제목"
                 self.assertEqual(cli._process_file(**kwargs)[0], "processed")
                 self.assertEqual(list(Path(tmpdir).glob("*.md")), [output])
-                self.assertIn("# 새 제목", output.read_text())
+                self.assertNotIn("# 새 제목", output.read_text())
+                self.assertTrue(output.read_text().startswith("<!-- lecture-notes-source:"))
 
     def test_generated_name_never_overwrites_unrelated_note(self):
         with tempfile.TemporaryDirectory() as tmpdir:

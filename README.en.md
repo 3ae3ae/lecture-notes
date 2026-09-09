@@ -317,7 +317,7 @@ lecture-notes "./Recording 01.m4a" --name-from-content --language en
 # Example: Recording 01 - Correlation and causation.md
 ```
 
-`--name-from-content` names new notes `topic.md`. Source files remain unchanged. Without the flag, the existing `source name.md` convention remains. Missing titles fall back to the source name. Unsafe filename and Obsidian link characters are removed, and UTF-8 filename length is bounded. Existing generated notes are not renamed automatically so their links remain valid.
+`--name-from-content` names new notes `topic.md` and omits the duplicate `# title` from the body. Source files remain unchanged. Without the flag, the existing `source name.md` convention and body title remain. Missing titles fall back to the source name. Unsafe filename and Obsidian link characters are removed, and UTF-8 filename length is bounded. Existing generated notes are not renamed automatically so their links remain valid.
 
 A hidden source identifier on the first line lets reruns find and skip generated notes. `--overwrite` updates the existing file while retaining its name to preserve links. Removing that comment or renaming the source breaks the association. Collisions with unrelated notes fail without overwriting them.
 

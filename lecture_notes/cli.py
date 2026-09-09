@@ -928,7 +928,7 @@ def _process_file(
             summary_text=result.summary_text,
             cornell_notes_text=result.cornell_notes_text,
             transcript_text=result.formatted_transcript,
-            title=title,
+            title="" if args.name_from_content else title,
             source=txt_path,
             overwrite=args.overwrite and previous_output == output_path,
         )
